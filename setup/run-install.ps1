@@ -85,13 +85,13 @@ try {
     $config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json
     $websocket = $null
     if ($options.Mode -eq 'master') {
-        $websocketPath = Join-Path $env:APPDATA 'obs-studio\plugin_config\obs-websocket\config.json'
-        if (Test-Path -LiteralPath $websocketPath) {
-            Copy-Item -LiteralPath $websocketPath -Destination ($websocketPath + $backupSuffix)
-            $websocket = Get-Content -LiteralPath $websocketPath -Raw | ConvertFrom-Json
+        $obsDirectory = Join-Path $env:APPDATA 'obs-studio'
+        foreach ($relative in @('global.ini', 'plugin_config\obs-websocket\config.json')) {
+            $settingsPath = Join-Path $obsDirectory $relative
+            if (Test-Path -LiteralPath $settingsPath) { Copy-Item -LiteralPath $settingsPath -Destination ($settingsPath + $backupSuffix) }
         }
-        $websocket = New-SetupWebsocket $websocket
-        Write-SetupJson $websocketPath $websocket
+        $websocket = New-SetupWebsocket (Read-SetupObsWebsocket $obsDirectory)
+        Write-SetupObsWebsocket $obsDirectory $websocket
     }
     $config = Set-SetupConfiguration $config $options $destination $obsPath $websocket
     if ($options.Mode -in @('camera', 'camera-view')) { Set-JsonProperty $config 'cameraDevice' $camera }

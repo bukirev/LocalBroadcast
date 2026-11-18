@@ -40,6 +40,17 @@ try {
     $rejected = $false
     try { Get-VerifiedDownload ([pscustomobject]@{url='http://example.invalid/unsafe'; version='test'; sha256='bad'}) $file } catch { $rejected = $true }
     Assert-Setup $rejected 'Insecure download accepted'
+    $obsDirectory = Join-Path $fixture 'obs-studio'
+    New-Item -ItemType Directory -Path $obsDirectory | Out-Null
+    $legacy = "[General]`r`nKeepThis=value`r`n[OBSWebSocket]`r`nServerEnabled=false`r`nServerPort=4460`r`nServerPassword=old-password-123`r`nAuthRequired=true`r`n[OtherSection]`r`nKeepThat=yes`r`n"
+    [IO.File]::WriteAllText((Join-Path $obsDirectory 'global.ini'), $legacy)
+    $settings = New-SetupWebsocket (Read-SetupObsWebsocket $obsDirectory)
+    Assert-Setup ($settings.server_port -eq 4460 -and $settings.server_password -eq 'old-password-123') 'Legacy OBS settings lost'
+    Write-SetupObsWebsocket $obsDirectory $settings
+    $updated = [IO.File]::ReadAllText((Join-Path $obsDirectory 'global.ini'))
+    Assert-Setup ($updated.Contains('ServerEnabled=true') -and $updated.Contains('KeepThis=value') -and $updated.Contains('KeepThat=yes')) 'Legacy OBS update dropped unrelated settings'
+    $readBack = Read-SetupObsWebsocket $obsDirectory
+    Assert-Setup ($readBack.server_enabled -and $readBack.server_port -eq 4460 -and $readBack.server_password -eq 'old-password-123') 'OBS INI/JSON round trip failed'
     Write-Host 'PASS: Windows PowerShell syntax, five roles, Go validation, identity preservation, OBS authentication, verified cache, HTTPS requirement.'
 } finally {
     $resolved = [IO.Path]::GetFullPath($fixture)

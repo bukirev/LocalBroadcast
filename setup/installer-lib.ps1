@@ -81,3 +81,54 @@ function New-SetupWebsocket($Existing) {
     Set-JsonProperty $Existing 'auth_required' $true
     return $Existing
 }
+
+function Read-SetupObsWebsocket([string]$Directory) {
+    $value = [pscustomobject]@{}
+    $jsonPath = Join-Path $Directory 'plugin_config\obs-websocket\config.json'
+    if (Test-Path -LiteralPath $jsonPath) { $value = Get-Content -LiteralPath $jsonPath -Raw | ConvertFrom-Json }
+    $iniPath = Join-Path $Directory 'global.ini'
+    $section = ''
+    if (Test-Path -LiteralPath $iniPath) {
+        foreach ($line in [IO.File]::ReadAllLines($iniPath)) {
+            if ($line -match '^\s*\[([^\]]+)\]\s*$') { $section = $Matches[1]; continue }
+            if ($section -ne 'OBSWebSocket' -or $line -notmatch '^\s*([^=]+?)\s*=(.*)$') { continue }
+            $key, $text = $Matches[1], $Matches[2]
+            switch ($key) {
+                'ServerPort' { $port = 0; if ([int]::TryParse($text, [ref]$port)) { Set-JsonProperty $value 'server_port' $port } }
+                'ServerPassword' { Set-JsonProperty $value 'server_password' $text }
+                'ServerEnabled' { Set-JsonProperty $value 'server_enabled' ($text.Trim() -eq 'true') }
+                'AuthRequired' { Set-JsonProperty $value 'auth_required' ($text.Trim() -eq 'true') }
+            }
+        }
+    }
+    return $value
+}
+
+function Write-SetupObsWebsocket([string]$Directory, $Value) {
+    # OBS 28-30 uses global.ini. Newer versions use JSON or migrate the INI
+    # values first. Write matching values to both formats without dropping others.
+    Write-SetupJson (Join-Path $Directory 'plugin_config\obs-websocket\config.json') $Value
+    $path = Join-Path $Directory 'global.ini'
+    $values = [ordered]@{FirstLoad='false'; ServerEnabled='true'; ServerPort=[string]$Value.server_port; AuthRequired='true'; ServerPassword=[string]$Value.server_password}
+    $lines = @()
+    if (Test-Path -LiteralPath $path) { $lines = [IO.File]::ReadAllLines($path) }
+    $output = New-Object 'Collections.Generic.List[string]'
+    $seen = @{}; $inside = $false; $found = $false
+    foreach ($line in $lines) {
+        if ($line -match '^\s*\[([^\]]+)\]\s*$') {
+            $next = $Matches[1]
+            if ($inside) { foreach ($key in $values.Keys) { if (!$seen.ContainsKey($key)) { $output.Add($key + '=' + $values[$key]) } } }
+            $inside = $next -eq 'OBSWebSocket'
+            if ($inside) { $found = $true }
+        } elseif ($inside -and $line -match '^\s*([^=]+?)\s*=') {
+            $key = $Matches[1]
+            if ($values.Contains($key)) { $output.Add($key + '=' + $values[$key]); $seen[$key] = $true; continue }
+        }
+        $output.Add($line)
+    }
+    if (!$found) { $output.Add(''); $output.Add('[OBSWebSocket]'); $inside = $true }
+    if ($inside) { foreach ($key in $values.Keys) { if (!$seen.ContainsKey($key)) { $output.Add($key + '=' + $values[$key]) } } }
+    $temporary = $path + '.setup-tmp'
+    [IO.File]::WriteAllText($temporary, (($output -join "`r`n") + "`r`n"), (New-Object Text.UTF8Encoding($false)))
+    Move-Item -LiteralPath $temporary -Destination $path -Force
+}

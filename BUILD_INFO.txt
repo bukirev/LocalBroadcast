@@ -1,5 +1,5 @@
-Local Broadcast 0.3.1-beta — 2026-11-19
-Go 1.27.4 windows/amd64. Native Windows control window and system tray.
-Native window lifecycle tests and live service restart passed.
-Setup downloads verified FFmpeg/FFplay, OBS and Microsoft Runtime as needed.
+Local Broadcast 0.3.2-beta — 2026-11-19
+Go 1.27.4 windows/amd64. Native Windows control window and tray.
+Installer supports legacy OBS global.ini and current JSON settings.
+OBS 30.1.2 authenticated connection verified locally.
 Clean-machine installation and physical media hardware require acceptance testing.
