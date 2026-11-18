@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Local Broadcast — панель управления</title>
+  <link rel="stylesheet" href="/assets/style.css">
+  <script src="/assets/app.js" defer></script>
+</head>
+<body>
+<div class="shell">
+  <aside class="side">
+    <div class="brand"><span class="brand-symbol">▣</span><div><strong>LOCAL<br>BROADCAST</strong><span>MEDIA NETWORK</span></div></div>
+    <div class="mode-pill" id="mode-pill">● Загрузка системы</div>
+    <div class="side-label">РАБОЧЕЕ ПРОСТРАНСТВО</div>
+    <nav id="navigation">
+      <button class="nav active" data-tab="overview"><span>◫</span> Обзор</button>
+      <button class="nav" data-tab="nodes"><span>▤</span> Устройства</button>
+      <button class="nav master-only" data-tab="routes"><span>⑂</span> Маршрутизация</button>
+      <button class="nav master-only" data-tab="sync"><span>◷</span> Синхронизация</button>
+      <button class="nav master-only" data-tab="obs"><span>▣</span> OBS Studio</button>
+      <button class="nav" data-tab="settings"><span>⚙</span> Настройки</button>
+      <button class="nav" data-tab="logs"><span>≡</span> Диагностика</button>
+    </nav>
+    <div class="side-bottom">
+      <div class="status-led"><span id="network-led" class="dot muted"></span><span id="network-label">Загрузка…</span></div>
+      <small id="version-label">Local Broadcast</small>
+    </div>
+  </aside>
+  <main class="content">
+    <header class="top">
+      <div><div class="eyebrow">LOCAL MEDIA SYSTEM</div><h1 id="page-title">Обзор</h1><p id="page-subtitle">Состояние системы и активные потоки</p></div>
+      <div class="top-meta"><span id="clock"></span><div class="chip" id="top-status">● Подключение…</div></div>
+    </header>
+    <div class="toast" role="status" id="toast" hidden></div>
+    <div class="notice" id="restart-notice" hidden><span id="restart-status">Настройки сохранены. Для смены главного режима нужен перезапуск программы. Передача потоков временно прервётся.</span> <button class="button secondary" id="restart-app" type="button">Перезапустить программу</button></div>
+
+    <section class="tab" id="tab-overview">
+      <div class="metrics">
+        <article class="metric"><div class="metric-label">Моя роль</div><div class="metric-value" id="metric-role">—</div><div class="metric-foot">Профиль этого компьютера</div></article>
+        <article class="metric"><div class="metric-label">Подключение</div><div class="metric-value" id="metric-online">—</div><div class="metric-foot" id="metric-online-foot">Проверяем сеть</div></article>
+        <article class="metric"><div class="metric-label">Медиапотоки</div><div class="metric-value" id="metric-streams">—</div><div class="metric-foot" id="metric-streams-foot">Локальные модули</div></article>
+      </div>
+      <div class="columns">
+        <article class="panel">
+          <div class="panel-title"><div><h2>Состояние трансляции</h2><p>Что делает компьютер в текущий момент</p></div><span class="tag" id="stream-tag">Проверка</span></div>
+          <div id="activity-list" class="activity-list"></div>
+          <div class="footnote">Передача запускается автоматически после получения маршрутов. В первый раз выберите роль и настройте устройство захвата.</div>
+        </article>
+        <article class="panel">
+          <div class="panel-title"><div><h2>Подключение</h2><p>Центральное управление и локальная сеть</p></div></div>
+          <div class="kv"><span>Этот ПК</span><strong id="my-name">—</strong></div>
+          <div class="kv"><span>Локальный IP</span><strong id="my-ip">—</strong></div>
+          <div class="kv"><span>Главный компьютер</span><strong id="master-label">—</strong></div>
+          <div class="kv"><span>FFmpeg</span><strong id="ffmpeg-label">—</strong></div>
+          <div class="kv"><span>FFplay</span><strong id="ffplay-label">—</strong></div>
+          <button class="button secondary full" id="goto-settings">Настроить компьютер ↗</button>
+        </article>
+      </div>
+      <article class="panel" id="master-peers-panel">
+        <div class="panel-title"><div><h2>Подключённые устройства</h2><p>Компьютеры, зарегистрированные на главном OBS</p></div><span class="tag" id="peer-count">0 устройств</span></div>
+        <div id="overview-peers" class="peer-list"></div>
+      </article>
+      <article class="panel" id="client-help-panel" hidden>
+        <div class="panel-title"><div><h2>Быстрый старт</h2><p>Для первого подключения к главному ПК</p></div></div>
+        <ol class="steps"><li>На ПК с OBS выберите роль <b>Главный OBS</b> и перезапустите программу.</li><li>На остальных ПК выберите нужный профиль и укажите <b>ключ системы</b>, показанный на главном ПК.</li><li>Проверьте, что компьютеры находятся в одной сети. При необходимости укажите IP главного ПК.</li><li>Приём видео в OBS создаётся через кнопку «Синхронизировать источники» на главном ПК.</li></ol>
+      </article>
+    </section>
+
+    <section class="tab" id="tab-nodes" hidden>
+      <article class="panel"><div class="panel-title"><div><h2>Устройства в системе</h2><p>Компьютеры получают постоянные идентификаторы. IP может изменяться.</p></div></div>
+        <div id="nodes-list" class="peer-list"></div>
+      </article>
+      <article class="panel"><div class="panel-title"><div><h2>Обнаружение устройств Windows</h2><p>FFmpeg DirectShow: камеры и микрофоны</p></div></div>
+        <button class="button secondary" id="detect-devices">Найти камеры и аудиоустройства</button>
+        <pre class="terminal" id="device-output">Нажмите кнопку, чтобы посмотреть реальные названия устройств на этом компьютере.</pre>
+        <div class="footnote">Название камеры или аудиоисточника скопируйте точно как в списке. Для системного звука Windows рекомендуется встроенный WASAPI Loopback (выберите в настройках презентера).</div>
+      </article>
+    </section>
+
+    <section class="tab" id="tab-routes" hidden>
+      <article class="panel">
+        <div class="panel-title"><div><h2>Маршрутизация потоков</h2><p>Включайте получателей прямо здесь, без изменения IP и перезапуска кодировщика.</p></div><span class="tag green" id="route-transport">UDP / SRT</span></div>
+        <div class="route-table-head"><div>ИСТОЧНИК</div><div>ПОЛУЧАТЕЛЬ</div><div>ПЕРЕДАЧА</div></div>
+        <div id="routes-list"></div>
+        <div class="footnote">Передача на OBS всегда идёт на порт 5000 для презентера и на индивидуальный порт 5101+ для камеры. Адрес OBS выбирается по активному сетевому соединению.</div>
+      </article>
+    </section>
+
+    <section class="tab" id="tab-sync" hidden>
+      <article class="panel">
+        <div class="panel-title"><div><h2>Выравнивание источников в OBS</h2><p>Автоматическая оценка сетевой задержки + сохранённая калибровка камеры и звука</p></div><span class="tag">BETA</span></div>
+        <p class="muted small">Система оценивает сетевую задержку по RTT и автоматически создаёт Render Delay и аудиосмещение для каждого входа OBS. RTT не измеряет время экспозиции или задержку USB-камеры. Для точной синхронизации сделайте тест с одновременной вспышкой и хлопком, затем сохраните поправки ниже.</p>
+        <div class="route-table-head" style="grid-template-columns:2fr 1fr 1fr 1fr"><div>ИСТОЧНИК</div><div>RTT</div><div>ВИДЕО, ±МС</div><div>ЗВУК, ±МС</div></div>
+        <div id="sync-list"></div>
+      </article>
+    </section>
+    <section class="tab" id="tab-obs" hidden>
+      <div class="columns">
+        <article class="panel">
+          <div class="panel-title"><div><h2>Интеграция с OBS</h2><p>Штатный obs-websocket 5.x на этом ПК</p></div></div>
+          <div class="obs-graphic">◉ <span>OBS Studio</span><small>Получает потоки и формирует эфир</small></div>
+          <p class="muted small">Программа создаёт отдельную сцену и входные Media Source. Существующие сцены не удаляются. Запуск трансляции в интернет остаётся под контролем оператора.</p>
+          <div class="action-buttons"><button class="button secondary" id="launch-obs">Запустить OBS</button><button class="button primary" id="sync-obs">Синхронизировать источники OBS</button></div>
+        </article>
+        <article class="panel">
+          <div class="panel-title"><div><h2>Ожидаемые входы</h2><p>Видеопотоки на главном ПК</p></div></div>
+          <div class="kv"><span>Экран презентера</span><code>udp://@:5000</code></div>
+          <div id="obs-camera-ports"></div>
+          <div class="footnote">В OBS активируйте WebSocket-сервер (Инструменты → WebSocket Server Settings), укажите пароль в разделе «Настройки» и запустите синхронизацию.</div>
+        </article>
+      </div>
+    </section>
+
+    <section class="tab" id="tab-settings" hidden>
+      <article class="panel"><div class="panel-title"><div><h2>Роль компьютера</h2><p>Один и тот же LocalBroadcast.exe работает во всех режимах</p></div></div>
+        <div class="field"><label for="f-mode">Профиль</label><select id="f-mode"><option value="master">Главный OBS</option><option value="presenter">Презентер: экран и звук</option><option value="camera">Камера: только отправка</option><option value="camera-view">Камера + экран презентера</option><option value="viewer">Только экран презентера</option><option value="custom">Пользовательский</option></select></div>
+        <div class="toggle-list"><label class="toggle-row"><span>Отправлять экран<small>Видеозахват рабочего стола</small></span><input type="checkbox" id="f-sendScreen"></label>
+        <label class="toggle-row"><span>Отправлять камеру<small>Видеозахват DirectShow</small></span><input type="checkbox" id="f-sendCamera"></label>
+        <label class="toggle-row"><span>Получать экран презентера<small>Окно ffplay с видео и звуком</small></span><input type="checkbox" id="f-watchPresenter"></label></div>
+      </article>
+      <div class="columns">
+        <article class="panel"><div class="panel-title"><div><h2>Общие и сетевые настройки</h2></div></div>
+          <div class="field"><label for="f-name">Имя компьютера в системе</label><input id="f-name" placeholder="Например: Камера спикера"></div>
+          <div class="field"><label for="f-secret">Общий ключ системы</label><div class="inline-input"><input id="f-secret" type="password" autocomplete="off"><button class="button tiny secondary" id="toggle-secret" type="button">Показать</button></div><small>Скопируйте один и тот же ключ с главного ПК на все клиентские компьютеры.</small></div>
+          <div class="field"><label for="f-masterIp">IP главного ПК (необязательно)</label><input id="f-masterIp" placeholder="Автообнаружение, или 192.168.1.100"><small>Полезно, если Wi-Fi блокирует широковещательное обнаружение.</small></div>
+          <label class="toggle-row"><span>Автоматическая передача<small>Поднимать потоки после подключения к главному ПК</small></span><input type="checkbox" id="f-autoStart"></label>
+          <label class="toggle-row"><span>Запускать с Windows<small>Автоматически открывать Local Broadcast при входе в систему</small></span><input type="checkbox" id="f-launchAtLogin"></label>
+        </article>
+        <article class="panel" id="media-settings-panel"><div class="panel-title"><div><h2>Видео и звук</h2></div></div>
+          <div class="field"><label for="f-encoder">Кодировщик H.264</label><select id="f-encoder"><option value="libx264">CPU — x264 (совместимый)</option><option value="h264_nvenc">NVIDIA NVENC</option><option value="h264_qsv">Intel Quick Sync</option><option value="h264_amf">AMD AMF</option></select><small>Сначала проверьте выбранный аппаратный кодировщик на вашем ПК.</small></div>
+          <div class="inline-fields screen-setting"><div class="field"><label for="f-screenFps">Экран, FPS</label><input type="number" id="f-screenFps" min="5" max="60"></div><div class="field"><label for="f-screenBitrateK">Экран, Кбит/с</label><input type="number" id="f-screenBitrateK" min="300" max="25000"></div></div>
+          <div class="inline-fields camera-setting"><div class="field"><label for="f-cameraFps">Камера, FPS</label><input type="number" id="f-cameraFps" min="5" max="60"></div><div class="field"><label for="f-cameraBitrateK">Камера, Кбит/с</label><input type="number" id="f-cameraBitrateK" min="300" max="25000"></div></div>
+          <div class="inline-fields camera-setting"><div class="field"><label for="f-cameraWidth">Ширина камеры</label><input type="number" id="f-cameraWidth"></div><div class="field"><label for="f-cameraHeight">Высота камеры</label><input type="number" id="f-cameraHeight"></div></div>
+          <div class="field camera-setting"><label for="f-cameraDevice">Имя камеры DirectShow</label><input id="f-cameraDevice" placeholder="USB Camera"></div>
+          <div class="field screen-setting"><label for="f-screenAudioMode">Системный звук Windows</label><select id="f-screenAudioMode"><option value="wasapi">WASAPI — нативный захват основного аудиовыхода</option><option value="dshow">DirectShow — Stereo Mix/другое устройство</option><option value="off">Не передавать звук</option></select><small>WASAPI использует общий аудиомикс основного устройства вывода и не требует виртуального кабеля.</small></div>
+          <div class="field screen-setting" id="screen-audio-dshow"><label for="f-screenAudioDevice">Звук экрана (Stereo Mix / loopback)</label><input id="f-screenAudioDevice" placeholder="Оставьте пустым, чтобы не передавать звук"></div>
+          <div class="field camera-setting"><label for="f-cameraAudioDevice">Микрофон камеры</label><input id="f-cameraAudioDevice" placeholder="Оставьте пустым, если не нужен"></div>
+        </article>
+      </div>
+      <div class="columns">
+        <article class="panel" id="obs-settings-panel"><div class="panel-title"><div><h2>OBS Studio</h2></div></div>
+          <div class="field"><label for="f-obsUrl">WebSocket OBS</label><input id="f-obsUrl" placeholder="ws://127.0.0.1:4455"></div>
+          <div class="field"><label for="f-obsPassword">Пароль WebSocket</label><input type="password" id="f-obsPassword" autocomplete="off"></div>
+          <div class="field"><label for="f-obsScene">Имя отдельной сцены</label><input id="f-obsScene"></div>
+          <div class="field"><label for="f-obsExePath">Путь к OBS (необязательно)</label><input id="f-obsExePath" placeholder="Автоматический поиск obs64.exe"></div>
+          <label class="toggle-row"><span>Автоматически запускать OBS<small>Если OBS ещё не запущен на главном ПК</small></span><input type="checkbox" id="f-autoLaunchObs"></label>
+          <label class="toggle-row"><span>Автосинхронизация OBS<small>Создать отсутствующие входы и сцену</small></span><input type="checkbox" id="f-obsAutoSync"></label>
+        </article>
+        <article class="panel master-setting" id="network-media-settings"><div class="panel-title"><div><h2>Транспорт по локальной сети</h2></div></div>
+          <div class="field"><label for="f-transport">Протокол между ПК</label><select id="f-transport"><option value="udp">UDP Unicast — минимум задержки, без восстановления</option><option value="srt">SRT — восстановление потерь Wi-Fi</option></select><small>Главный OBS назначает транспорт для всей системы. При SRT на клиентах используется SRT caller, на получателях — listener. Нужна сборка FFmpeg с libsrt на всех ПК.</small></div>
+          <div class="field"><label for="f-srtLatencyMs">SRT latency, мс</label><input type="number" id="f-srtLatencyMs" min="80" max="1500"><small>Начните с 180–250 мс по Wi-Fi. Это буфер SRT, не суммарная задержка эфира.</small></div>
+          <label class="toggle-row"><span>Адаптация при разрывах SRT<small>После повторяющихся сбоев автоматически повышает буфер при переподключении (макс. 600 мс).</small></span><input type="checkbox" id="f-srtAdaptive"></label>
+          <label class="toggle-row"><span>Автоматическое сетевое выравнивание OBS<small>Компенсация различий RTT; точность камер требует калибровки.</small></span><input type="checkbox" id="f-syncEnabled"></label>
+        </article>
+        <article class="panel" id="media-tools-panel"><div class="panel-title"><div><h2>Медиакомпоненты</h2></div></div>
+          <div class="field"><label for="f-ffmpegPath">Исполняемый файл FFmpeg</label><input id="f-ffmpegPath" placeholder="ffmpeg"></div>
+          <div class="field"><label for="f-ffplayPath">Исполняемый файл FFplay</label><input id="f-ffplayPath" placeholder="ffplay"></div>
+          <p class="muted small">Можно положить <code>ffmpeg.exe</code> и <code>ffplay.exe</code> рядом с <code>LocalBroadcast.exe</code> или указать полные пути. В комплект они не включены.</p>
+        </article>
+      </div>
+      <div class="settings-footer"><p>Настройки сохраняются локально и применяются при ближайшем цикле управления. Переключение главного режима требует перезапуска.</p><button class="button primary" id="save-config">Сохранить настройки</button></div>
+    </section>
+
+    <section class="tab" id="tab-logs" hidden>
+      <article class="panel"><div class="panel-title"><div><h2>Журнал событий</h2><p>Ошибки захвата, подключения и синхронизации</p></div><button class="button secondary tiny" id="copy-logs">Скопировать</button></div>
+        <pre class="terminal logs" id="logs-output">Загрузка…</pre>
+      </article>
+      <article class="panel"><div class="panel-title"><div><h2>Сетевые порты</h2></div></div>
+        <div class="kv"><span>Локальная панель</span><code>127.0.0.1:39888/TCP</code></div>
+        <div class="kv"><span>Координатор на главном</span><code>39780/TCP</code></div>
+        <div class="kv"><span>Обнаружение</span><code>39721/UDP</code></div>
+        <div class="kv"><span>Экран</span><code>5000/UDP · 11000/SRT</code></div>
+        <div class="kv"><span>Камеры в OBS</span><code>5101–5999/UDP · 11101–11999/SRT</code></div>
+        <div class="footnote">Откройте необходимые входящие порты в брандмауэре Windows только для частной локальной сети.</div>
+      </article>
+    </section>
+  </main>
+</div>
+</body>
+</html>

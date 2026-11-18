@@ -1,0 +1,61 @@
+# Local Broadcast — архитектура 0.2.0-beta
+
+Один бинарный модуль на всех Windows-узлах, общая веб-панель localhost. Роль главного OBS выбирается вручную; смена главного режима требует рестарта.
+
+## Control plane
+
+- `Coordinator` (`coordinator.go`) запускается только на главном ПК OBS (TCP 39780). Регистрация, временные метрики RTT, матрица маршрутов и объявление системного SRT/UDP профиля.
+- `Agent` (`client.go`) на других ПК каждые 2 секунды регистрируется и получает планы. На кратковременных сбоях сохраняет работающий план до 7 секунд.
+- Discovery (`discovery.go`) — локальное UDP-объявление; можно настроить IP вручную.
+- `ConfigStore` — защищённая от частичного сохранения JSON-конфигурация schema 2. Стабильные Node ID и порты.
+
+## Media plane
+
+```text
+Windows desktop  ─── gdigrab ───┐
+WASAPI audio mix ── PCM pipe ────┤ FFmpeg (H.264 + AAC, one encode)
+                                └─ MPEG TS on loopback UDP:16900
+                                     │
+                                     ▼
+                              Go UDP fanout
+                           ┌─────────┴──────────┐
+                           ▼                    ▼
+                         UDP               SRT sender(s)
+                    1 copy/target       one FFmpeg relay/target
+                           │                    │
+                           ▼                    ▼
+                      OBS / FFplay         SRT listener FFmpeg
+                                                │
+                                           local UDP MPEG-TS
+                                                │
+                                           OBS / FFplay
+```
+
+Камера проходит ту же схему; вход DirectShow, опциональный микрофон. Медиапотоки пересылаются напрямую от источника к получателям, coordinator не ретранслирует видео. На главном ПК `MediaManager.SyncMasterReceivers` поддерживает SRT listener для каждого онлайн источника. Интеграция с OBS использует постоянные локальные UDP-порты независимо от транспорта между ПК.
+
+## Синхронизация
+
+- WASAPI PCM и захват экрана поступают в один процесс FFmpeg. `aresample=async=1000:first_pts=0` уменьшает дрейф аудио.
+- RTT клиентов по heartbeat замеряется и сглаживается. Грубая сетeвая оценка `RTT/2` используется в `plannedSyncOffsets`.
+- OBS WebSocket создаёт `async_delay_filter` (Render Delay) для видео и задаёт `SetInputAudioSyncOffset` для аудио.
+- На каждый source ID сохраняются отдельные `videoMs` и `audioMs`, используемые поверх автоматического сетевого выравнивания.
+- Ограничение: синхронизация не включает детектирование событий на физической камере. Для точной синхронизации независимых камер пока обязательна ручная калибровка вспышкой/хлопком.
+
+## SRT
+
+- Протокол по LAN — SRT Caller (источник) / Listener (получатель) и зашифрованный passphrase из общего секретного ключа. Параметр FFmpeg `latency` микросекунды.
+- Входящий Listener FFmpeg делает remux MPEG-TS в localhost UDP для OBS/FFplay. Для каждого получателя создаётся отдельный FFmpeg транспортный процесс, кодирование повторно не выполняется.
+- Встроенный ARQ SRT обрабатывает потери пакетов. После нескольких коротких разрывов в настройке `SRTAdaptive` буфер следующего SRT-подключения увеличивается на 40 мс (до 600 мс). Это не изменение битрейта в реальном времени.
+- Для проверки на реальном Wi-Fi рекомендован поток 720p/30 и минимум 5 GHz Wi-Fi; OBS и презентер по возможности проводные.
+
+## Слои модулей
+
+- `model.go`: конфигурации, валидация, планы и постоянные маршруты.
+- `client.go`, `coordinator.go`, `discovery.go`: Control Plane.
+- `media.go`: захват/FFmpeg, UDP fanout, viewer, receiver orchestration.
+- `audio_windows.go`: нативный WASAPI Windows COM, `audio_other.go` — заглушка для других платформ.
+- `transport_srt.go`: SRT relays и адаптация при переподключениях.
+- `sync.go`: алгоритм сетевого выравнивания + калибровки.
+- `obs.go`: WebSocket v5 и OBS фильтры/сцены.
+- `ui.go`, `assets/`: API и интерфейс.
+- `*_test.go`: unit/интеграционные тесты; FFmpeg media integration требует `LB_TEST_MEDIA=1`.

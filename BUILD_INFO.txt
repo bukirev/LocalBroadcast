@@ -1,0 +1,5 @@
+Local Broadcast 0.2.1-beta — 2026-11-19
+Go 1.27.4 windows/amd64.
+Unit tests and vet (excluding native COM pointer analysis) passed.
+Native Windows restart checked on preceding build; physical media hardware requires validation.
+Unsigned executable. FFmpeg/FFplay not bundled.
