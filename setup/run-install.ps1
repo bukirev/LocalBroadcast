@@ -15,7 +15,9 @@ try {
     Start-Transcript -Path (Join-Path $cache 'install.log') -Force | Out-Null; $transcript = $true
     $existing = $null
     if (Test-Path -LiteralPath $configPath) { $existing = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json }
-    $options = Show-SetupOptions $existing
+    $offlineDirectory = Join-Path $source 'dependencies'
+    $offline = (Test-Path -LiteralPath (Join-Path $offlineDirectory 'ffmpeg-9.0.2.zip')) -and (Test-Path -LiteralPath (Join-Path $offlineDirectory 'OBS-Installer.exe')) -and (Test-Path -LiteralPath (Join-Path $offlineDirectory 'VC_redist.x64.exe'))
+    $options = Show-SetupOptions $existing $offline
     if ($null -eq $options) { return }
     $session = (Get-Process -Id $PID).SessionId
     $running = @(Get-Process -Name LocalBroadcast -ErrorAction SilentlyContinue | Where-Object { $_.SessionId -eq $session })
@@ -30,14 +32,16 @@ try {
     $dependencies = Get-Content -LiteralPath (Join-Path $PSScriptRoot 'dependencies.json') -Raw | ConvertFrom-Json
     Write-Host '1/5. Подготовка FFmpeg и FFplay...'
     $ffmpegArchive = Join-Path $cache 'ffmpeg-9.0.2.zip'
-    Get-VerifiedDownload $dependencies.ffmpeg $ffmpegArchive
+    Get-VerifiedDownload $dependencies.ffmpeg $ffmpegArchive $offlineDirectory
     $ffmpegStage = Join-Path $cache ('ffmpeg-' + [guid]::NewGuid().ToString('N'))
+    Write-Host 'Распаковка FFmpeg и FFplay...'
     Expand-Archive -LiteralPath $ffmpegArchive -DestinationPath $ffmpegStage
     $ffmpeg = @(Get-ChildItem -LiteralPath $ffmpegStage -Recurse -Filter ffmpeg.exe)
     $ffplay = @(Get-ChildItem -LiteralPath $ffmpegStage -Recurse -Filter ffplay.exe)
     if ($ffmpeg.Count -ne 1 -or $ffplay.Count -ne 1) { throw 'В архиве не найдены FFmpeg и FFplay.' }
     $protocols = & $ffmpeg[0].FullName -hide_banner -protocols 2>&1 | Out-String
     if ($LASTEXITCODE -ne 0 -or $protocols -notmatch '(?m)^\s*srt\s*$') { throw 'FFmpeg не поддерживает SRT.' }
+    Write-Host 'FFmpeg и FFplay готовы, SRT доступен.'
     if ($options.Mode -in @('camera', 'camera-view')) {
         $oldPreference = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
         $deviceOutput = & $ffmpeg[0].FullName -hide_banner -list_devices true -f dshow -i dummy 2>&1 | Out-String
@@ -49,8 +53,8 @@ try {
     $obsPath = Find-SetupOBS
     $needOBS = $options.Mode -eq 'master' -and !$obsPath
     if ($needOBS) {
-        Get-VerifiedDownload $dependencies.vcredist (Join-Path $cache 'VC_redist.x64.exe')
-        Get-VerifiedDownload $dependencies.obs (Join-Path $cache 'OBS-Installer.exe')
+        Get-VerifiedDownload $dependencies.vcredist (Join-Path $cache 'VC_redist.x64.exe') $offlineDirectory
+        Get-VerifiedDownload $dependencies.obs (Join-Path $cache 'OBS-Installer.exe') $offlineDirectory
     }
     $resultPath = Join-Path $cache ('admin-result-' + [guid]::NewGuid().ToString('N') + '.json')
     $adminScript = Join-Path $PSScriptRoot 'setup-admin.ps1'

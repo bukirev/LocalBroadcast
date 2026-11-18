@@ -2,7 +2,7 @@
 Add-Type -AssemblyName System.Drawing
 [Windows.Forms.Application]::EnableVisualStyles()
 
-function Show-SetupOptions($Existing) {
+function Show-SetupOptions($Existing, [bool]$Offline = $false) {
     $form = New-Object Windows.Forms.Form
     $form.Text = 'Установка Local Broadcast'
     $form.Size = New-Object Drawing.Size(630, 590)
@@ -43,7 +43,8 @@ function Show-SetupOptions($Existing) {
     $private.Text = 'Доверенная LAN: сделать Ethernet/Wi-Fi частной сетью'
     $private.Checked = $true; $private.Location = New-Object Drawing.Point(24, 339)
     $private.Size = New-Object Drawing.Size(580, 28); $form.Controls.Add($private)
-    Add-Label 'Нужен интернет. FFmpeg/FFplay и OBS подготовятся автоматически.' 381
+    if ($Offline) { Add-Label 'Автономный пакет: загружать компоненты из интернета не нужно.' 381 }
+    else { Add-Label 'Нужен интернет. FFmpeg/FFplay и OBS подготовятся автоматически.' 381 }
     Add-Label 'Windows запросит права администратора. Настройки сохранятся.' 406
     Add-Label 'Local Broadcast будет закрыт на время обновления.' 431
     $install = New-Object Windows.Forms.Button

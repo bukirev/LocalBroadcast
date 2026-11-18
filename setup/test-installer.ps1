@@ -40,6 +40,31 @@ try {
     $rejected = $false
     try { Get-VerifiedDownload ([pscustomobject]@{url='http://example.invalid/unsafe'; version='test'; sha256='bad'}) $file } catch { $rejected = $true }
     Assert-Setup $rejected 'Insecure download accepted'
+    $offline = Join-Path $fixture 'offline'
+    New-Item -ItemType Directory -Path $offline | Out-Null
+    Copy-Item -LiteralPath $file -Destination (Join-Path $offline 'reused.bin')
+    $dependency = [pscustomobject]@{url='https://example.invalid/unused'; version='test'; sha256=$digest}
+    $copy = Join-Path $fixture 'copied\reused.bin'
+    Get-VerifiedDownload $dependency $copy $offline
+    Assert-Setup ((Get-FileHash -LiteralPath $copy -Algorithm SHA256).Hash -eq $digest) 'Offline component not copied correctly'
+    [IO.File]::WriteAllText((Join-Path $offline 'reused.bin'), 'corrupt')
+    $rejected = $false
+    try { Get-VerifiedDownload $dependency (Join-Path $fixture 'corrupt-check\reused.bin') $offline } catch { $rejected = $true }
+    Assert-Setup $rejected 'Corrupted offline component accepted'
+    $originalReceiver = ${function:Receive-SetupDownload}
+    $script:downloadAttempts = 0
+    try {
+        Set-Item Function:\Receive-SetupDownload {
+            param($Uri, $Path)
+            $script:downloadAttempts++
+            if ($script:downloadAttempts -eq 1) { throw 'Simulated failed primary host' }
+            [IO.File]::WriteAllText($Path, 'verified fixture')
+        }
+        $mirrorDependency = [pscustomobject]@{url='https://primary.invalid/file'; mirrors=@('https://mirror.invalid/file'); version='test'; sha256=$digest}
+        $mirrorTarget = Join-Path $fixture 'mirror.bin'
+        Get-VerifiedDownload $mirrorDependency $mirrorTarget
+        Assert-Setup ($script:downloadAttempts -eq 2 -and (Test-Path -LiteralPath $mirrorTarget)) 'Mirror fallback failed'
+    } finally { Set-Item Function:\Receive-SetupDownload $originalReceiver }
     $obsDirectory = Join-Path $fixture 'obs-studio'
     New-Item -ItemType Directory -Path $obsDirectory | Out-Null
     $legacy = "[General]`r`nKeepThis=value`r`n[OBSWebSocket]`r`nServerEnabled=false`r`nServerPort=4460`r`nServerPassword=old-password-123`r`nAuthRequired=true`r`n[OtherSection]`r`nKeepThat=yes`r`n"

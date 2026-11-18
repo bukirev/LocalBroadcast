@@ -1,10 +1,10 @@
-﻿param([string]$Version = '0.3.2-beta')
+﻿param([string]$Version = '0.3.3-beta')
 $ErrorActionPreference = 'Stop'
 $project = Split-Path $PSScriptRoot -Parent
 $stage = Join-Path $project ('dist\package-' + $Version + '-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Force -Path $stage | Out-Null
 Copy-Item -LiteralPath (Join-Path $project 'dist\LocalBroadcast.exe') -Destination $stage
-foreach ($name in @('README.md', 'RELEASE_NOTES.md', 'BUILD_INFO.txt', 'install.ps1', 'Install.cmd', 'configure-firewall.ps1')) {
+foreach ($name in @('README.md', 'RELEASE_NOTES.md', 'BUILD_INFO.txt', 'install.ps1', 'Install.cmd', 'Prepare-Offline.cmd', 'configure-firewall.ps1')) {
     Copy-Item -LiteralPath (Join-Path $project $name) -Destination $stage
 }
 Copy-Item -LiteralPath (Join-Path $project 'docs') -Destination $stage -Recurse -Force

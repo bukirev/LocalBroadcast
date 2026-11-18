@@ -11,24 +11,78 @@ function Write-SetupJson([string]$Path, $Value) {
     Move-Item -LiteralPath $temporary -Destination $Path -Force
 }
 
-function Get-VerifiedDownload($Dependency, [string]$Path) {
-    if (Test-Path -LiteralPath $Path) {
-        if ((Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash -eq $Dependency.sha256) { return }
-    }
-    $uri = [uri]$Dependency.url
-    if (!$uri.IsAbsoluteUri -or $uri.Scheme -ne 'https') { throw 'HTTPS download required' }
-    New-Item -ItemType Directory -Force -Path (Split-Path $Path -Parent) | Out-Null
-    Write-Host ('Downloading ' + $Dependency.version + ' ...')
-    $partial = $Path + '.partial'
-    $client = New-Object Net.WebClient
+function Receive-SetupDownload([uri]$Uri, [string]$Path) {
+    $request = [Net.HttpWebRequest]::Create($Uri)
+    $request.UserAgent = 'LocalBroadcast-Setup'
+    $request.Timeout = 20000
+    $request.ReadWriteTimeout = 30000
+    $response = $null; $inputStream = $null; $outputStream = $null
+    $clock = [Diagnostics.Stopwatch]::StartNew()
     try {
-        $client.Headers['User-Agent'] = 'LocalBroadcast-Setup'
-        $client.DownloadFile($Dependency.url, $partial)
-    } finally { $client.Dispose() }
-    if ((Get-FileHash -LiteralPath $partial -Algorithm SHA256).Hash -ne $Dependency.sha256) {
-        throw ('SHA256 verification failed: ' + (Split-Path $Path -Leaf))
+        Write-Host ('Источник: ' + $Uri.Host + ' — подключение (до 20 секунд)...')
+        $response = $request.GetResponse()
+        $inputStream = $response.GetResponseStream()
+        $outputStream = [IO.File]::Open($Path, [IO.FileMode]::Create, [IO.FileAccess]::Write, [IO.FileShare]::Read)
+        $buffer = New-Object byte[] 65536
+        $received = [long]0; $lastReport = -1.0
+        while (($count = $inputStream.Read($buffer, 0, $buffer.Length)) -gt 0) {
+            $outputStream.Write($buffer, 0, $count); $received += $count
+            if ($clock.Elapsed.TotalSeconds - $lastReport -ge 1) {
+                $speed = $received / 1MB / [Math]::Max(0.1, $clock.Elapsed.TotalSeconds)
+                $progress = ('{0:N1} МБ · {1:N2} МБ/с' -f ($received / 1MB), $speed)
+                if ($response.ContentLength -gt 0) { $progress = ('{0:N0}% · {1:N1}/{2:N1} МБ · {3:N2} МБ/с' -f (100*$received/$response.ContentLength), ($received/1MB), ($response.ContentLength/1MB), $speed) }
+                Write-Host ("`r" + $progress.PadRight(90)) -NoNewline
+                $lastReport = $clock.Elapsed.TotalSeconds
+            }
+            if ($clock.Elapsed.TotalMinutes -gt 15) { throw 'Превышено время загрузки (15 минут).' }
+        }
+        Write-Host ("`rПолучено {0:N1} МБ. Проверка файла..." -f ($received / 1MB)).PadRight(95)
+    } finally {
+        if ($outputStream) { $outputStream.Dispose() }
+        if ($inputStream) { $inputStream.Dispose() }
+        if ($response) { $response.Dispose() }
+        $request.Abort()
     }
-    Move-Item -LiteralPath $partial -Destination $Path -Force
+}
+
+function Get-VerifiedDownload($Dependency, [string]$Path, [string]$OfflineDirectory = '') {
+    if (Test-Path -LiteralPath $Path) {
+        if ((Get-FileHash -LiteralPath $Path -Algorithm SHA256).Hash -eq $Dependency.sha256) { Write-Host ('Проверенный кеш: ' + (Split-Path $Path -Leaf)); return }
+    }
+    New-Item -ItemType Directory -Force -Path (Split-Path $Path -Parent) | Out-Null
+    if ($OfflineDirectory) {
+        $candidate = Join-Path $OfflineDirectory (Split-Path $Path -Leaf)
+        if (Test-Path -LiteralPath $candidate) {
+            if ((Get-FileHash -LiteralPath $candidate -Algorithm SHA256).Hash -ne $Dependency.sha256) { throw ('Повреждён файл автономного пакета: ' + $candidate) }
+            Copy-Item -LiteralPath $candidate -Destination $Path -Force
+            Write-Host ('Из автономного пакета: ' + (Split-Path $Path -Leaf))
+            return
+        }
+    }
+    $urls = @([string]$Dependency.url)
+    if ($Dependency.PSObject.Properties['mirrors']) { $urls += @($Dependency.mirrors) }
+    foreach ($url in $urls) {
+        $uri = [uri]$url
+        if (!$uri.IsAbsoluteUri -or $uri.Scheme -ne 'https') { throw 'HTTPS download required' }
+    }
+    $partial = $Path + '.partial'; $failure = ''
+    foreach ($attempt in 1..2) {
+        foreach ($url in $urls) {
+            try {
+                Write-Host ('Загрузка ' + (Split-Path $Path -Leaf) + ' · попытка ' + $attempt + '/2')
+                Receive-SetupDownload ([uri]$url) $partial
+                if ((Get-FileHash -LiteralPath $partial -Algorithm SHA256).Hash -ne $Dependency.sha256) { throw 'SHA256 не совпадает.' }
+                Move-Item -LiteralPath $partial -Destination $Path -Force
+                Write-Host 'Файл проверен.'
+                return
+            } catch {
+                $failure = $_.Exception.Message
+                Write-Host ("`nЗагрузка не удалась: " + $failure) -ForegroundColor Yellow
+                if (Test-Path -LiteralPath $partial) { Remove-Item -LiteralPath $partial -Force }
+            }
+        }
+    }
+    throw ('Не удалось скачать ' + (Split-Path $Path -Leaf) + '. Используйте автономный пакет или повторите позже. Последняя ошибка: ' + $failure)
 }
 
 function Find-SetupOBS {
