@@ -54,6 +54,7 @@ func main() {
 	noBrowser := flag.Bool("no-browser", false, "не открывать окно браузера")
 	conf := flag.String("config", "", "путь к отдельному файлу конфигурации (для тестов)")
 	parent := flag.Int("restart-parent", 0, "ожидать завершения предыдущего процесса")
+	initConfig := flag.Bool("init-config", false, "создать или проверить конфигурацию без запуска приложения")
 	flag.Parse()
 	if *parent != 0 {
 		if err := waitForParent(*parent); err != nil {
@@ -67,6 +68,9 @@ func main() {
 	store, err := newConfigStore(path)
 	if err != nil {
 		log.Fatal(err)
+	}
+	if *initConfig {
+		return
 	}
 	logs := &LogBuffer{}
 	media := newMediaManager(logs)

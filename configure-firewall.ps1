@@ -1,4 +1,4 @@
-# Запустить в PowerShell от администратора. Разрешает только Private/LocalSubnet.
+﻿# Запустить в PowerShell от администратора. Разрешает только Private/LocalSubnet.
 $ErrorActionPreference = 'Stop'
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = New-Object Security.Principal.WindowsPrincipal($identity)

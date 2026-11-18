@@ -173,6 +173,15 @@ func (a *Application) serveUI(ctx context.Context) error {
 			return
 		}
 		switch rq.Action {
+		case "shutdown":
+			jsonWrite(w, map[string]bool{"ok": true})
+			if f, ok := w.(http.Flusher); ok {
+				f.Flush()
+			}
+			if a.stop != nil {
+				a.stop()
+			}
+			return
 		case "restart":
 			if err := a.requestRestart(); err != nil {
 				http.Error(w, err.Error(), 500)

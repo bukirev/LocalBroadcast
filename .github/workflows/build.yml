@@ -13,6 +13,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.27.x'
+          cache: false
       - run: go test -race ./...
       - run: go vet ./...
   windows:
@@ -24,6 +25,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: '1.27.x'
+          cache: false
       - name: Unit tests
         run: go test ./...
       - name: Static analysis
@@ -35,22 +37,27 @@ jobs:
           New-Item -ItemType Directory -Force dist | Out-Null
           $env:CGO_ENABLED = '0'
           go build -trimpath -ldflags='-s -w -H windowsgui' -o dist/LocalBroadcast.exe .
+      - name: Test installer configuration
+        shell: powershell
+        run: ./setup/test-installer.ps1
       - name: Package Windows release
         shell: pwsh
         run: |
           $version = (Select-String -Path model.go -Pattern 'appVersion\s*=\s*"([^"]+)"').Matches.Groups[1].Value
           if ($env:GITHUB_REF_TYPE -eq 'tag' -and $env:GITHUB_REF_NAME -ne "v$version") { throw 'Tag and application version differ' }
-          @("Local Broadcast $version", "Built by GitHub Actions: $env:GITHUB_SHA", (go version), 'FFmpeg/FFplay not bundled. Physical media hardware requires validation.') | Set-Content BUILD_INFO.txt -Encoding utf8
+          @("Local Broadcast $version", "Built by GitHub Actions: $env:GITHUB_SHA", (go version), 'Setup downloads FFmpeg/FFplay and OBS as needed. Physical media hardware requires validation.') | Set-Content BUILD_INFO.txt -Encoding utf8
           ./scripts/package-windows.ps1 -Version $version
+          go test -tags setup ./installer
       - uses: actions/upload-artifact@v4
         with:
           name: LocalBroadcast-windows-x64
           path: |
             dist/*.zip
             dist/*.sha256
+            dist/*-Setup.exe
       - name: Publish beta release
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create $env:GITHUB_REF_NAME dist/*.zip dist/*.sha256 --title "Local Broadcast $env:GITHUB_REF_NAME" --notes-file RELEASE_NOTES.md --prerelease --verify-tag
+        run: gh release create $env:GITHUB_REF_NAME dist/*.zip dist/*-Setup.exe dist/*.sha256 --title "Local Broadcast $env:GITHUB_REF_NAME" --notes-file RELEASE_NOTES.md --prerelease --verify-tag

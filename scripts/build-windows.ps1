@@ -1,4 +1,4 @@
-$ErrorActionPreference = 'Stop'
+﻿$ErrorActionPreference = 'Stop'
 Set-Location (Split-Path $PSScriptRoot -Parent)
 New-Item -ItemType Directory -Force dist | Out-Null
 $env:GOOS = 'windows'

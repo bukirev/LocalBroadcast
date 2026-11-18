@@ -4,3 +4,4 @@
 *.test
 *.log
 local-config*.json
+/installer/payload.zip
