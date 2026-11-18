@@ -51,7 +51,8 @@ func configPath() string {
 	return filepath.Join(base, "LocalBroadcast", "config.json")
 }
 func main() {
-	noBrowser := flag.Bool("no-browser", false, "не открывать окно браузера")
+	noBrowser := flag.Bool("no-browser", false, "запустить в фоне без открытия окна управления или браузера")
+	showControl := flag.Bool("show-control", false, "показать окно управления Windows")
 	conf := flag.String("config", "", "путь к отдельному файлу конфигурации (для тестов)")
 	parent := flag.Int("restart-parent", 0, "ожидать завершения предыдущего процесса")
 	initConfig := flag.Bool("init-config", false, "создать или проверить конфигурацию без запуска приложения")
@@ -60,6 +61,9 @@ func main() {
 		if err := waitForParent(*parent); err != nil {
 			log.Fatal(err)
 		}
+	}
+	if !*initConfig && activateExistingDesktop() {
+		return
 	}
 	path := *conf
 	if path == "" {
@@ -121,10 +125,11 @@ func main() {
 			stop()
 		}
 	}()
-	if !*noBrowser {
-		go func() { time.Sleep(750 * time.Millisecond); openBrowser(fmt.Sprintf("http://127.0.0.1:%d", uiPort)) }()
+	if err := app.runDesktop(ctx, !*noBrowser || *showControl); err != nil {
+		logs.Add("Ошибка окна управления: " + err.Error())
+		showDesktopError(err.Error())
+		stop()
 	}
-	<-ctx.Done()
 	media.Close()
 }
 func openBrowser(url string) {

@@ -107,7 +107,7 @@ try {
     $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
     if ($options.AutoRun) {
         if (!(Test-Path -LiteralPath $runKey)) { New-Item -Path $runKey | Out-Null }
-        Set-ItemProperty -Path $runKey -Name LocalBroadcast -Value ('"' + $app + '"')
+        Set-ItemProperty -Path $runKey -Name LocalBroadcast -Value ('"' + $app + '" -no-browser')
     } else { Remove-ItemProperty -Path $runKey -Name LocalBroadcast -ErrorAction SilentlyContinue }
     Start-Process -FilePath $app -WorkingDirectory $destination -WindowStyle Hidden
     $connected = $false
@@ -120,7 +120,7 @@ try {
         Start-Sleep -Milliseconds 250
     }
     if (!$connected) { throw 'Файлы установлены, но панель управления не запустилась. Проверьте, свободен ли порт 39888, и повторите запуск Local Broadcast.' }
-    $message = 'Установка завершена. Панель управления откроется в браузере.'
+    $message = 'Установка завершена. Открыто окно управления Windows. Настройки доступны по кнопке «Панель в браузере».'
     if ($options.Mode -eq 'master') { $message += "`nОбщий ключ для остальных ПК находится в разделе «Настройки» панели." }
     if ($adminResult.reboot) { $message += "`nMicrosoft Runtime запросил перезагрузку Windows. Сохраните работу и перезагрузите ПК." }
     [Windows.Forms.MessageBox]::Show($message, 'Local Broadcast', 'OK', 'Information') | Out-Null

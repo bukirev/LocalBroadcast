@@ -22,7 +22,9 @@ func (a *Application) requestRestart() error {
 	if err != nil {
 		return err
 	}
-	cmd := exec.Command(executable, "-no-browser", "-config", a.store.path, "-restart-parent", strconv.Itoa(os.Getpid()))
+	args := []string{"-no-browser", "-config", a.store.path, "-restart-parent", strconv.Itoa(os.Getpid())}
+	args = append(args, desktopRestartArgs()...)
+	cmd := exec.Command(executable, args...)
 	prepareHeadlessCommand(cmd)
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("не удалось запустить программу: %w", err)

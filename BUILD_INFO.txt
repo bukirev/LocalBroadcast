@@ -1,5 +1,5 @@
-Local Broadcast 0.3.0-beta — 2026-11-19
-Go 1.27.4 windows/amd64.
-Online setup downloads hash-pinned FFmpeg/FFplay, OBS and Microsoft Runtime as needed.
-Installer configuration, dependencies, signatures, SRT and bootstrap extraction tested.
-Clean-machine UAC installation and physical media hardware require acceptance testing.
+Local Broadcast 0.3.1-beta — 2026-11-19
+Go 1.27.4 windows/amd64. Native Windows control window and system tray.
+Native window lifecycle tests and live service restart passed.
+Setup downloads verified FFmpeg/FFplay, OBS and Microsoft Runtime as needed.
+Clean-machine installation and physical media hardware require acceptance testing.

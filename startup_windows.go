@@ -17,7 +17,7 @@ func setAutoRun(enable bool) error {
 		if err != nil {
 			return err
 		}
-		cmd = exec.Command("reg.exe", "ADD", key, "/v", value, "/t", "REG_SZ", "/d", fmt.Sprintf("\"%s\"", path), "/f")
+		cmd = exec.Command("reg.exe", "ADD", key, "/v", value, "/t", "REG_SZ", "/d", fmt.Sprintf("\"%s\" -no-browser", path), "/f")
 	} else {
 		cmd = exec.Command("reg.exe", "DELETE", key, "/v", value, "/f")
 	}
