@@ -1,4 +1,4 @@
-﻿param([string]$Version = '0.3.8-beta.1')
+﻿param([string]$Version = '0.3.8-beta.2')
 $ErrorActionPreference = 'Stop'
 $project = Split-Path $PSScriptRoot -Parent
 $stage = Join-Path $project ('dist\package-' + $Version + '-' + [guid]::NewGuid().ToString('N'))
@@ -9,6 +9,7 @@ foreach ($name in @('README.md', 'RELEASE_NOTES.md', 'BUILD_INFO.txt', 'install.
 }
 Copy-Item -LiteralPath (Join-Path $project 'docs') -Destination $stage -Recurse -Force
 Copy-Item -LiteralPath (Join-Path $project 'setup') -Destination $stage -Recurse -Force
+Copy-Item -LiteralPath (Join-Path $project 'tools/obs-latency') -Destination (Join-Path $stage 'docs/obs-latency') -Recurse
 # Windows PowerShell 5.1 needs a BOM to read Russian text correctly.
 Get-ChildItem -LiteralPath $stage -Filter *.ps1 -Recurse | ForEach-Object {
     $text = [IO.File]::ReadAllText($_.FullName)
