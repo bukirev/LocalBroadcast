@@ -1,5 +1,5 @@
 param(
-    [ValidateSet('Inspect','HardwareOn','Restore')][string]$Mode = 'Inspect',
+    [ValidateSet('Inspect','InspectAudio','RestartInput','ReopenInput','HardwareOn','Restore')][string]$Mode = 'Inspect',
     [ValidateRange(1024,65535)][int]$ApiPort = 39888,
     [string]$InputName = 'LB | Presenter',
     [string]$BackupPath = ''
@@ -7,7 +7,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $base = 'http://127.0.0.1:' + $ApiPort
 $state = Invoke-RestMethod -Uri ($base + '/api/state') -TimeoutSec 5
-if (!$BackupPath) { $BackupPath = Join-Path $env:LOCALAPPDATA 'LocalBroadcast\Diagnostics\obs-decoder-backup.json' }
+if (!$BackupPath) { $BackupPath = Join-Path $env:LOCALAPPDATA 'LocalBroadcast\Diagnostics\obs-hw-decode-backup.json' }
 $obsUri = [Uri]$state.config.obsUrl
 if ($obsUri.Scheme -ne 'ws' -or $obsUri.Host -notin @('127.0.0.1','localhost','[::1]')) { throw 'OBS WebSocket must be local.' }
 $socket = New-Object Net.WebSockets.ClientWebSocket
@@ -59,7 +59,7 @@ try {
     try { [void](Wait-OBSTask ($socket.ConnectAsync($obsUri,$timeout.Token))) } finally { $timeout.Dispose() }
     $hello = Receive-OBS
     if ($hello.op -ne 0) { throw 'Unexpected OBS hello.' }
-    $identify = @{rpcVersion=1;eventSubscriptions=0}
+    $identify = @{rpcVersion=1;eventSubscriptions=$(if ($Mode -eq 'InspectAudio') {65536} else {0})}
     if ($hello.d.authentication) {
         $secret = Get-OBSHash ($state.config.obsPassword + $hello.d.authentication.salt)
         $identify.authentication = Get-OBSHash ($secret + $hello.d.authentication.challenge)
@@ -73,31 +73,91 @@ try {
     $identity = @($inputs.inputs | Where-Object { $_.inputName -ceq $InputName })
     if ($identity.Count -ne 1 -or !$identity[0].inputUuid) { throw 'Cannot uniquely identify OBS input.' }
     $defaults = Invoke-OBS 'GetInputDefaultSettings' @{inputKind='ffmpeg_source'}
-    $currentHardware = [bool]$defaults.defaultInputSettings.is_hw_decoding
-    if ($source.inputSettings.PSObject.Properties['is_hw_decoding']) { $currentHardware = [bool]$source.inputSettings.is_hw_decoding }
-    if ($Mode -ne 'Inspect') {
+    $currentHardware = [bool]$defaults.defaultInputSettings.hw_decode
+    if ($source.inputSettings.PSObject.Properties['hw_decode']) { $currentHardware = [bool]$source.inputSettings.hw_decode }
+    if ($Mode -in @('HardwareOn','Restore','RestartInput','ReopenInput')) {
         if ((Invoke-OBS 'GetStreamStatus').outputActive -or (Invoke-OBS 'GetRecordStatus').outputActive) { throw 'Stop OBS recording/streaming before changing the decoder.' }
+        if ($Mode -eq 'ReopenInput') {
+            if ($state.config.mode -ne 'master') { throw 'Run ReopenInput on the main PC.' }
+            if ($source.inputSettings.is_local_file) { throw 'ReopenInput requires a network source, not a local file.' }
+            $originalInput = [string]$source.inputSettings.input
+            $inputUri = $null
+            if (![Uri]::TryCreate($originalInput,[UriKind]::Absolute,[ref]$inputUri) -or $inputUri.Scheme -ne 'udp' -or $inputUri.Port -ne 5000) { throw 'ReopenInput requires the UDP:5000 presenter Media Source.' }
+            # OBS 32 network Media Source update unconditionally recreates
+            # media playback, even when the URL value is unchanged.
+            [void](Invoke-OBS 'SetInputSettings' @{inputName=$InputName;inputSettings=@{input=$originalInput};overlay=$true})
+            Start-Sleep -Milliseconds 500
+            $restored = Invoke-OBS 'GetInputSettings' @{inputName=$InputName}
+            if ($restored.inputSettings.input -cne $originalInput) { throw 'Input URL changed unexpectedly.' }
+        } elseif ($Mode -eq 'RestartInput') {
+            if ($state.config.mode -ne 'master') { throw 'Run RestartInput on the main PC.' }
+            [void](Invoke-OBS 'TriggerMediaInputAction' @{inputName=$InputName;mediaAction='OBS_WEBSOCKET_MEDIA_INPUT_ACTION_RESTART'})
+        } else {
         if ($Mode -eq 'HardwareOn') {
             if ($state.config.mode -ne 'master') { throw 'Run HardwareOn on the main PC.' }
             if (Test-Path -LiteralPath $BackupPath) { throw 'A backup already exists. Restore it before starting another test.' }
-            $backup = @{machine=[Environment]::MachineName;obsUrl=$obsUri.AbsoluteUri;inputName=$InputName;inputUuid=$identity[0].inputUuid;hardwareDecode=$currentHardware}
+            $backup = @{settingKey='hw_decode';machine=[Environment]::MachineName;obsUrl=$obsUri.AbsoluteUri;inputName=$InputName;inputUuid=$identity[0].inputUuid;hardwareDecode=$currentHardware}
             $directory = Split-Path -Parent ([IO.Path]::GetFullPath($BackupPath))
             New-Item -ItemType Directory -Force -Path $directory | Out-Null
             $backup | ConvertTo-Json | Set-Content -LiteralPath $BackupPath -Encoding UTF8
             $target = $true
         } else {
             $backup = Get-Content -LiteralPath $BackupPath -Raw -Encoding UTF8 | ConvertFrom-Json
+            if ($backup.settingKey -cne 'hw_decode') { throw 'Legacy hardware backup used an unsupported setting key; do not apply it to the real decoder.' }
             if ($backup.machine -cne [Environment]::MachineName -or $backup.obsUrl -cne $obsUri.AbsoluteUri -or $backup.inputName -cne $InputName -or $backup.inputUuid -cne $identity[0].inputUuid) { throw 'Backup belongs to a different machine or OBS input.' }
             $target = [bool]$backup.hardwareDecode
         }
-        [void](Invoke-OBS 'SetInputSettings' @{inputName=$InputName;inputSettings=@{is_hw_decoding=$target};overlay=$true})
+        [void](Invoke-OBS 'SetInputSettings' @{inputName=$InputName;inputSettings=@{hw_decode=$target};overlay=$true})
         $check = Invoke-OBS 'GetInputSettings' @{inputName=$InputName}
-        if ([bool]$check.inputSettings.is_hw_decoding -ne $target) { throw 'Decoder setting was not confirmed.' }
+        if ([bool]$check.inputSettings.hw_decode -ne $target) { throw 'Decoder setting was not confirmed.' }
         if ($Mode -eq 'Restore') { Remove-Item -LiteralPath $BackupPath }
         $currentHardware = $target
+        }
     }
     $cpu = $null
     try { $cpu = @(Get-CimInstance Win32_Processor | Select-Object Name,NumberOfLogicalProcessors) } catch {}
     $stats = Invoke-OBS 'GetStats'
-    [ordered]@{mode=$Mode;appVersion=$state.version;obsVersion=$version.obsVersion;cpu=$cpu;srtHealth=$state.media.srtHealth;hardwareDecode=$currentHardware;bufferingMB=$source.inputSettings.buffering_mb;activeFPS=$stats.activeFps;renderSkippedFrames=$stats.renderSkippedFrames;renderTotalFrames=$stats.renderTotalFrames;backupPath=$(if ($Mode -eq 'HardwareOn') {$BackupPath} else {$null})} | ConvertTo-Json -Depth 8
+    $report = [ordered]@{mode=$Mode;appVersion=$state.version;obsVersion=$version.obsVersion;cpu=$cpu;srtHealth=$state.media.srtHealth;hardwareDecode=$currentHardware;bufferingMB=$source.inputSettings.buffering_mb;activeFPS=$stats.activeFps;renderSkippedFrames=$stats.renderSkippedFrames;renderTotalFrames=$stats.renderTotalFrames;backupPath=$(if ($Mode -eq 'HardwareOn') {$BackupPath} else {$null})}
+    if ($Mode -eq 'InspectAudio') {
+        function Read-OptionalOBS([string]$Kind,$Data=@{}) {
+            try { Invoke-OBS $Kind $Data } catch { @{error=$_.Exception.Message} }
+        }
+        $audio = [ordered]@{}
+        $audio['mute'] = Read-OptionalOBS 'GetInputMute' @{inputName=$InputName}
+        $audio['volume'] = Read-OptionalOBS 'GetInputVolume' @{inputName=$InputName}
+        $audio['monitor'] = Read-OptionalOBS 'GetInputAudioMonitorType' @{inputName=$InputName}
+        $audio['tracks'] = Read-OptionalOBS 'GetInputAudioTracks' @{inputName=$InputName}
+        $audio['syncOffset'] = Read-OptionalOBS 'GetInputAudioSyncOffset' @{inputName=$InputName}
+        $audio['sourceActive'] = Read-OptionalOBS 'GetSourceActive' @{sourceName=$InputName}
+        $audio['media'] = Read-OptionalOBS 'GetMediaInputStatus' @{inputName=$InputName}
+        $audio['program'] = Read-OptionalOBS 'GetCurrentProgramScene'
+        $studio = Read-OptionalOBS 'GetStudioModeEnabled'
+        $audio['studioMode'] = $studio
+        if ($studio.studioModeEnabled) { $audio['preview'] = Read-OptionalOBS 'GetCurrentPreviewScene' }
+        $audio['stream'] = Read-OptionalOBS 'GetStreamStatus'
+        $audio['record'] = Read-OptionalOBS 'GetRecordStatus'
+        $bindings = @()
+        foreach ($input in $inputs.inputs) {
+            if ($input.inputKind -ne 'ffmpeg_source') { continue }
+            $setting = Read-OptionalOBS 'GetInputSettings' @{inputName=$input.inputName}
+            $uri = $null
+            if ([Uri]::TryCreate([string]$setting.inputSettings.input,[UriKind]::Absolute,[ref]$uri) -and $uri.Scheme -eq 'udp' -and $uri.Port -eq 5000) { $bindings += $input.inputName }
+        }
+        $audio['inputsOnUDP5000'] = $bindings
+        $eventCount = 0; $updates = 0; $peak = 0.0
+        $end = [DateTime]::UtcNow.AddSeconds(3)
+        while ([DateTime]::UtcNow -lt $end) {
+            try { $event = Receive-OBS } catch { break }
+            if ($event.op -ne 5 -or $event.d.eventType -ne 'InputVolumeMeters') { continue }
+            $eventCount++
+            foreach ($input in $event.d.eventData.inputs) {
+                if ($input.inputName -cne $InputName -and $input.inputUuid -cne $identity[0].inputUuid) { continue }
+                $updates++
+                foreach ($channel in $input.inputLevelsMul) { foreach ($value in $channel) { if ([double]$value -gt $peak) { $peak = [double]$value } } }
+            }
+        }
+        $audio['meter'] = @{eventCount=$eventCount;sourceUpdates=$updates;maxPeak=$peak;signalSeen=($peak -gt 0.000001)}
+        $report['audio'] = $audio
+    }
+    $report | ConvertTo-Json -Depth 12
 } finally { $socket.Dispose() }
