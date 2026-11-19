@@ -23,6 +23,7 @@ type pcmTimeline struct {
 	done                   chan struct{}
 	closed                 bool
 	late, missing, skipped uint64
+	captureClock           pcmCaptureClock
 }
 
 func newPCMTimeline(f AudioFormat, block int) *pcmTimeline {
@@ -35,10 +36,6 @@ func newPCMTimeline(f AudioFormat, block int) *pcmTimeline {
 		s.silence = 128
 	}
 	return s
-}
-
-func (s *pcmTimeline) position() int64 {
-	return s.now().Sub(s.epoch).Nanoseconds() * int64(s.rate) / int64(time.Second)
 }
 
 func (s *pcmTimeline) push(start int64, pcm []byte) {
@@ -66,7 +63,7 @@ func (s *pcmTimeline) push(start int64, pcm []byte) {
 // take is called under mu. The short hold lets WASAPI publish a packet before
 // its time is rendered, including when delivery is batched by the audio engine.
 func (s *pcmTimeline) take() []byte {
-	due := s.position() - int64(s.rate)*40/1000
+	due := int64(s.positionAt(s.now())) - int64(s.rate)*40/1000
 	if due <= s.next {
 		return nil
 	}
@@ -137,5 +134,5 @@ func (s *pcmTimeline) Close() error {
 func (s *pcmTimeline) Snapshot() map[string]any {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return map[string]any{"clockFrames": s.next, "missingFrames": s.missing, "lateFrames": s.late, "skippedFrames": s.skipped, "sampleRate": s.rate, "holdMs": 40}
+	return map[string]any{"clockFrames": s.next, "missingFrames": s.missing, "lateFrames": s.late, "skippedFrames": s.skipped, "sampleRate": s.rate, "holdMs": 40, "clockRateHz": s.captureClock.rate, "clockReanchors": s.captureClock.reanchors, "deviceDiscontinuities": s.captureClock.discontinuities, "timestampErrors": s.captureClock.timestampErrors}
 }

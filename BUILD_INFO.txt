@@ -1,6 +1,5 @@
-Local Broadcast 0.3.6-beta — 2026-11-19
-Go 1.27.4 windows/amd64. Local bootstrap build, updater protocol 1.
-Core update changes LocalBroadcast.exe only; dependencies and settings preserved.
-Real-process install/failed-candidate rollback, unit/negative tests passed.
-Public next-release end-to-end and clean-PC acceptance pending.
-See docs/UPDATES.md and docs/UPDATES_TEST_LOG.md.
+Local Broadcast 0.3.7-beta.1 — 2026-11-19
+WASAPI device-clock continuity fix. Updater protocol 1; dependencies unchanged.
+Unit tests, live gdigrab/WASAPI/AAC and local SRT tests passed.
+Video latency in OBS remains unresolved. Physical two-PC acceptance pending.
+See docs/DIAGNOSTICS_2026-11-19.md.

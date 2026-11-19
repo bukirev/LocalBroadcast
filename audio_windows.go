@@ -85,7 +85,16 @@ func formatFromWave(p uintptr) (AudioFormat, int, error) {
 	return AudioFormat{PCM: pcm, Rate: rate, Channels: ch}, block, nil
 }
 
-func openNativeLoopback(ctx context.Context, logs *LogBuffer) (io.ReadCloser, AudioFormat, error) {
+type audioCaptureProbe struct {
+	Device uint64 `json:"device"`
+	QPC    uint64 `json:"qpc"`
+	Mapped int64  `json:"mapped"`
+	Frames uint32 `json:"frames"`
+	Flags  uint32 `json:"flags"`
+	PCM    []byte `json:"-"`
+}
+
+func openNativeLoopback(ctx context.Context, logs *LogBuffer, probes ...func(audioCaptureProbe)) (io.ReadCloser, AudioFormat, error) {
 	captureCtx, cancel := context.WithCancel(ctx)
 	deferOnError := true
 	defer func() {
@@ -169,8 +178,6 @@ func openNativeLoopback(ctx context.Context, logs *LogBuffer) (io.ReadCloser, Au
 		ready <- result{f: f, stream: stream}
 		ticker := time.NewTicker(5 * time.Millisecond)
 		defer ticker.Stop()
-		var deviceAnchor int64
-		var deviceAnchored bool
 		for {
 			select {
 			case <-captureCtx.Done():
@@ -208,17 +215,15 @@ func openNativeLoopback(ctx context.Context, logs *LogBuffer) (io.ReadCloser, Au
 					copy(pcm, unsafe.Slice((*byte)(unsafe.Pointer(data)), len(pcm)))
 				}
 				_ = callCOM(capture, 4, uintptr(frames))
-				// QPC is the first frame's timestamp in 100-ns units. Fall back
-				// to the endpoint frame clock only when its timestamp is invalid.
-				position := stream.position() - int64(frames)
-				if qpcStart != 0 && qpc != 0 && flags&4 == 0 {
-					position = (int64(qpc) - qpcStart) * int64(f.Rate) / 10000000
-				} else if deviceAnchored && flags&1 == 0 {
-					position = int64(devicePos) + deviceAnchor
+				// QPC anchors time; device positions preserve exact continuity.
+				elapsed := time.Duration(int64(qpc)-qpcStart) * 100 * time.Nanosecond
+				clockFlags := flags
+				if qpcStart == 0 || qpc == 0 {
+					clockFlags |= 4
 				}
-				if !deviceAnchored || flags&1 != 0 {
-					deviceAnchor = position - int64(devicePos)
-					deviceAnchored = true
+				position := stream.capturePosition(devicePos, elapsed, frames, clockFlags)
+				if len(probes) > 0 && probes[0] != nil {
+					probes[0](audioCaptureProbe{Device: devicePos, QPC: qpc, Mapped: position, Frames: frames, Flags: flags, PCM: pcm})
 				}
 				stream.push(position, pcm)
 			}
