@@ -1,6 +1,5 @@
-Local Broadcast 0.3.7-beta.2 — 2026-11-19
-Monitor and WASAPI output selection; capture EOF recovery.
-Updater protocol 1; dependencies unchanged.
-Unit, live WASAPI/AAC, injected EOF recovery, persistence and browser UI checks passed.
-OBS video latency unresolved; remote audio source acceptance pending.
-See docs/CAPTURE_SELECTION_2026-11-19.md.
+Local Broadcast 0.3.7-beta.3 — 2026-11-19
+Fallback to CPU x264 on recognized hardware encoder initialization failure.
+Real QSV failure recovered video/AAC; WASAPI EOF recovery regression passed.
+Updater protocol 1; dependency set unchanged. OBS latency unresolved.
+See docs/ENCODER_RECOVERY_2026-11-19.md.

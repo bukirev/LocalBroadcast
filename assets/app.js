@@ -144,6 +144,9 @@ function render(state){current=state;
  renderRoutes(state.routes||[]);renderOBS(state.peers||[]);renderSync(state.sync||{});
  $('route-transport').textContent=(state.config.transport==='srt'?'SRT + LOCAL UDP':'UDP UNICAST');
  $('logs-output').textContent=(state.logs||[]).join('\n')||'Журнал пока пуст';
+ const encoders=[state.media?.screen,state.media?.camera].filter(x=>x&&typeof x==='object'&&x.encoder);
+ $('encoder-status').textContent=encoders.map(x=>x.encoder!==x.requestedEncoder?`Выбран ${x.requestedEncoder}; используется CPU — x264 после ошибки запуска.`:`Используется ${x.encoder}.`).join(' ');
+
  if(!settingsDirty&&!saving)populateForm(state.config);
 }
 async function refresh(force=false){if(restarting||(document.hidden&&!force))return;try{const data=await get('/api/state');if(!restarting)render(data)}catch(e){if(!current)toast('Нет связи с приложением: '+e.message,true)}}

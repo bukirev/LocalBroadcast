@@ -21,7 +21,7 @@ const (
 	cameraPortStart = 5101
 )
 
-var appVersion = "0.3.7-beta.2"
+var appVersion = "0.3.7-beta.3"
 var uiPort = 39888
 
 type Configuration struct {

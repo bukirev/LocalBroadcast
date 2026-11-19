@@ -362,10 +362,12 @@ type Pipeline struct {
 	packetsForwarded atomic.Uint64
 	sendErrors       atomic.Uint64
 	audio            *pcmTimeline
+	requestedEncoder string
+	encoder          string
 }
 
 func startPipeline(kind string, port int, c Configuration, logs *LogBuffer) (*Pipeline, error) {
-	args, err := ffmpegArgs(kind, c, port)
+	_, err := ffmpegArgs(kind, c, port)
 	if err != nil {
 		return nil, err
 	}
@@ -388,7 +390,7 @@ func startPipeline(kind string, port int, c Configuration, logs *LogBuffer) (*Pi
 	ctx, cancel := context.WithCancel(context.Background())
 	p := &Pipeline{kind: kind, cancel: cancel, captureDone: make(chan struct{}), incoming: input, outgoing: output, logs: logs, relayCancel: map[string]context.CancelFunc{}, relayPorts: map[string]int{}}
 	go p.forwardLoop(ctx)
-	go p.captureLoop(ctx, binaryPath(c.FFmpegPath), args, c, port)
+	go p.captureLoop(ctx, binaryPath(c.FFmpegPath), c, port)
 	return p, nil
 }
 func (p *Pipeline) SetTargets(endpoints []Endpoint) {
@@ -452,13 +454,26 @@ func (p *Pipeline) forwardLoop(ctx context.Context) {
 		}
 	}
 }
-func (p *Pipeline) captureLoop(ctx context.Context, binary string, args []string, c Configuration, port int) {
+func (p *Pipeline) captureLoop(ctx context.Context, binary string, c Configuration, port int) {
 	if p.captureDone != nil {
 		defer close(p.captureDone)
 	}
 	retry := time.Second
+	p.mu.Lock()
+	p.requestedEncoder = c.Encoder
+	p.encoder = c.Encoder
+	p.mu.Unlock()
 	for ctx.Err() == nil {
-		loopArgs := args
+		loopArgs, argsErr := ffmpegArgs(p.kind, c, port)
+		if argsErr != nil {
+			p.logs.Add("Настройки захвата: " + argsErr.Error())
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(retry):
+				continue
+			}
+		}
 		var pcmReader io.ReadCloser
 		var audioCancel context.CancelFunc
 		var audioDone <-chan struct{}
@@ -498,7 +513,12 @@ func (p *Pipeline) captureLoop(ctx context.Context, binary string, args []string
 		}
 		prepareHeadlessCommand(cmd)
 		// Keep last FFmpeg diagnostics without allocating unbounded memory.
-		cmd.Stderr = &lineWriter{logs: p.logs, prefix: "FFmpeg/" + p.kind}
+		encoderFailed := false
+		cmd.Stderr = &lineWriter{logs: p.logs, prefix: "FFmpeg/" + p.kind, observe: func(line string) {
+			if hardwareEncoderInitFailed(c.Encoder, line) {
+				encoderFailed = true
+			}
+		}}
 		p.mu.Lock()
 		p.running = false
 		p.mu.Unlock()
@@ -527,6 +547,13 @@ func (p *Pipeline) captureLoop(ctx context.Context, binary string, args []string
 			case err := <-done:
 				if ctx.Err() == nil {
 					p.logs.Add(fmt.Sprintf("FFmpeg %s завершился: %v", p.kind, err))
+					if err != nil && encoderFailed {
+						p.logs.Add(fmt.Sprintf("Кодировщик %s недоступен; переходим на CPU — x264 для %s", c.Encoder, p.kind))
+						c.Encoder = "libx264"
+						p.mu.Lock()
+						p.encoder = c.Encoder
+						p.mu.Unlock()
+					}
 				}
 			}
 		}
@@ -557,6 +584,7 @@ type lineWriter struct {
 	logs    *LogBuffer
 	prefix  string
 	pending string
+	observe func(string)
 }
 
 var sensitiveURL = regexp.MustCompile(`(?i)(passphrase=)[^&\s]+`)
@@ -567,6 +595,9 @@ func (w *lineWriter) Write(b []byte) (int, error) {
 	for _, line := range chunks[:len(chunks)-1] {
 		line = strings.TrimSpace(line)
 		if line != "" {
+			if w.observe != nil {
+				w.observe(line)
+			}
 			w.logs.Add(w.prefix + ": " + sensitiveURL.ReplaceAllString(line, "${1}[hidden]"))
 		}
 	}
@@ -580,7 +611,7 @@ func (w *lineWriter) Write(b []byte) (int, error) {
 func (p *Pipeline) Snapshot() map[string]any {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	out := map[string]any{"targets": len(p.targets), "running": p.running, "packetsForwarded": p.packetsForwarded.Load(), "sendErrors": p.sendErrors.Load()}
+	out := map[string]any{"targets": len(p.targets), "running": p.running, "packetsForwarded": p.packetsForwarded.Load(), "sendErrors": p.sendErrors.Load(), "encoder": p.encoder, "requestedEncoder": p.requestedEncoder}
 	if p.audio != nil {
 		out["audio"] = p.audio.Snapshot()
 	}
