@@ -1,12 +1,13 @@
 'use strict';
 const $ = (id) => document.getElementById(id);
 const labels = {master:'Главный OBS',presenter:'Презентер',camera:'Камера','camera-view':'Камера + просмотр',viewer:'Просмотр',custom:'Пользовательский'};
-const titles = {overview:['Обзор','Состояние системы и активные потоки'],nodes:['Устройства','Компьютеры и источники захвата'],routes:['Маршрутизация','Управление направлением медиапотоков'],sync:['Синхронизация','Задержка видео и звука камер'],obs:['OBS Studio','Связь с эфирной сценой'],settings:['Настройки','Роли, видеозахват, сеть и интеграции'],logs:['Диагностика','Состояния процессов и журнал событий']};
+const titles = {overview:['Обзор','Состояние системы и активные потоки'],nodes:['Устройства','Компьютеры и источники захвата'],routes:['Маршрутизация','Управление направлением медиапотоков'],sync:['Синхронизация','Задержка видео и звука камер'],obs:['OBS Studio','Связь с эфирной сценой'],updates:['Обновления','Проверка, загрузка и установка новой версии'],settings:['Настройки','Роли, видеозахват, сеть и интеграции'],logs:['Диагностика','Состояния процессов и журнал событий']};
 let current = null;
 let activeTab = 'overview';
 let settingsDirty = false;
 let saving = false;
 let syncDirty = false;
+let updateChannelDirty=false;
 let restarting = false;
 let toastTimer;
 function el(tag, cls, content) { const n = document.createElement(tag); if (cls) n.className=cls; if(content!==undefined) n.textContent=String(content); return n; }
@@ -127,6 +128,7 @@ async function restartApp(){
 }
 function render(state){current=state;
  $('version-label').textContent='Версия '+state.version;
+ renderUpdates(state.updates);
  const isMaster=state.system==='master';
  for(const el of document.querySelectorAll('.master-only'))el.hidden=!isMaster;
  if(!isMaster&&['routes','obs','sync'].includes(activeTab))tab('overview');
@@ -151,6 +153,7 @@ function init(){for(const b of document.querySelectorAll('.nav'))b.addEventListe
  for(const k of fields){const input=$('f-'+k);if(input)input.addEventListener('input',()=>{settingsDirty=true;if(['sendScreen','sendCamera','screenAudioMode'].includes(k))updateVisibleFields();})}
  $('save-config').addEventListener('click',saveSettings);
  $('restart-app').addEventListener('click',restartApp);
+ initUpdates();
  $('detect-devices').addEventListener('click',async()=>{$('device-output').textContent='Поиск устройств…';try{$('device-output').textContent=(await post('/api/devices',{})).output||'Устройства не обнаружены'}catch(e){$('device-output').textContent=e.message}});
  $('launch-obs').addEventListener('click',async()=>{try{await post('/api/action',{action:'open-obs'});toast('Команда запуска OBS отправлена')}catch(e){toast('OBS: '+e.message,true)}});
  $('sync-obs').addEventListener('click',async()=>{const b=$('sync-obs');b.disabled=true;try{await post('/api/action',{action:'obs-sync'});toast('Источники OBS синхронизированы.')}catch(e){toast('OBS: '+e.message,true)}finally{b.disabled=false}});
@@ -160,3 +163,47 @@ function init(){for(const b of document.querySelectorAll('.nav'))b.addEventListe
  refresh();setInterval(refresh,2500);
 }
 document.addEventListener('DOMContentLoaded',init);
+
+function renderUpdates(u){
+ if(!u)return;
+ const busy=['checking','downloading','installing'].includes(u.phase);
+ $('update-current').textContent=u.installed;
+ if(!updateChannelDirty&&document.activeElement!==$('update-channel'))$('update-channel').value=u.channel;
+ $('update-channel').disabled=busy;
+ $('update-check').disabled=busy;
+ $('update-download').hidden=!u.release||!['available','error'].includes(u.phase);
+ $('update-cancel').hidden=!['checking','downloading'].includes(u.phase);
+ $('update-status').textContent=u.message+(u.phase==='downloading'&&u.release?` ${ (u.received/1048576).toFixed(1)} / ${(u.release.size/1048576).toFixed(1)} МБ`:'');
+ $('update-progress').hidden=u.phase!=='downloading';
+ $('update-progress').value=u.release?100*u.received/u.release.size:0;
+ $('update-release').textContent=u.release?`Версия ${u.release.version} · ${(u.release.size/1048576).toFixed(1)} МБ`:'';
+ $('update-notes').textContent=u.release?.notes||'';
+ $('update-source').href=u.release?.url||'https://github.com/bukirev/LocalBroadcast/releases';
+ $('update-install-area').hidden=u.phase!=='prepared';
+ $('update-exe').textContent=u.executable;
+}
+function initUpdates(){
+ const action=async(name,data={})=>{try{renderUpdates(await post('/api/updates/'+name,data));return true}catch(e){toast(e.message,true);return false}};
+ $('update-channel').addEventListener('change',()=>{updateChannelDirty=true});
+ $('update-check').addEventListener('click',async()=>{if(await action('check',{channel:$('update-channel').value}))updateChannelDirty=false;});
+ $('update-download').addEventListener('click',()=>action('download'));
+ $('update-cancel').addEventListener('click',()=>action('cancel'));
+ $('update-install').addEventListener('click',async()=>{
+  if(settingsDirty||syncDirty){toast('Сначала сохраните изменённые настройки и калибровку.',true);return}
+  if(!confirm('Установить новую версию и перезапустить Local Broadcast?'))return;
+  const old=current?.instanceId;const node=current?.config?.nodeId;
+  $('update-install').disabled=true;
+  try{
+   renderUpdates(await post('/api/updates/install',{interrupt:$('update-interrupt').checked}));
+   const deadline=Date.now()+90000;
+   while(Date.now()<deadline){
+    await new Promise(resolve=>setTimeout(resolve,1000));
+    let state;try{state=await get('/api/state')}catch(e){continue}
+    render(state);
+    if(state.instanceId!==old&&state.readyForWork&&state.config.nodeId===node){toast('Программа перезапущена. Версия '+state.version);return}
+    if(state.instanceId===old&&state.updates?.phase==='error')throw Error(state.updates.message);
+   }
+   throw Error('Перезапуск не подтверждён. Проверьте окно обновлятора и журнал .lb-update.');
+  }catch(e){toast(e.message,true)}finally{$('update-install').disabled=false}
+ });
+}

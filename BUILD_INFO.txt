@@ -1,5 +1,6 @@
-Local Broadcast 0.3.4-beta — 2026-11-19
-Go 1.27.4 windows/amd64. Explicit IPv4 OBS media receivers.
-Real presenter screen received at 1920x1080 over SRT on Windows LAN.
-OBS WebSocket receiver-address regression test passed.
-Offline package includes original upstream dependencies.
+Local Broadcast 0.3.6-beta — 2026-11-19
+Go 1.27.4 windows/amd64. Local bootstrap build, updater protocol 1.
+Core update changes LocalBroadcast.exe only; dependencies and settings preserved.
+Real-process install/failed-candidate rollback, unit/negative tests passed.
+Public next-release end-to-end and clean-PC acceptance pending.
+See docs/UPDATES.md and docs/UPDATES_TEST_LOG.md.

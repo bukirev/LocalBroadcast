@@ -48,6 +48,12 @@ jobs:
           @("Local Broadcast $version", "Built by GitHub Actions: $env:GITHUB_SHA", (go version), 'Setup downloads FFmpeg/FFplay and OBS as needed. Physical media hardware requires validation.') | Set-Content BUILD_INFO.txt -Encoding utf8
           ./scripts/package-windows.ps1 -Version $version
           go test -tags setup ./installer
+      - name: Prepare full offline release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $stage = Get-ChildItem dist -Directory -Filter 'package-*' | Sort-Object LastWriteTime -Descending | Select-Object -First 1
+          ./setup/prepare-offline.ps1 -SourceDirectory $stage.FullName -Destination ./dist -CacheDirectory (Join-Path $env:RUNNER_TEMP 'LocalBroadcast-dependencies')
       - uses: actions/upload-artifact@v4
         with:
           name: LocalBroadcast-windows-x64
@@ -55,9 +61,9 @@ jobs:
             dist/*.zip
             dist/*.sha256
             dist/*-Setup.exe
-      - name: Publish beta release
+      - name: Publish verified release
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-        run: gh release create $env:GITHUB_REF_NAME dist/*.zip dist/*-Setup.exe dist/*.sha256 --title "Local Broadcast $env:GITHUB_REF_NAME" --notes-file RELEASE_NOTES.md --prerelease --verify-tag
+        run: ./scripts/publish-release.ps1 -Tag $env:GITHUB_REF_NAME -ArtifactDirectory ./dist -Publish

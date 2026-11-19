@@ -47,9 +47,6 @@ func plannedSyncOffsets(c Configuration, peers []Peer) map[string]SyncAdjustment
 			continue
 		}
 		est := estimatedNetworkDelay(p)
-		if est > maxDelay {
-			maxDelay = est
-		}
 		if p.SendScreen && !foundPresenter {
 			sources = append(sources, source{p.ID + ":screen", "LB | Presenter", est})
 			foundPresenter = true
@@ -60,6 +57,11 @@ func plannedSyncOffsets(c Configuration, peers []Peer) map[string]SyncAdjustment
 				short = short[:6]
 			}
 			sources = append(sources, source{p.ID + ":camera", "LB | " + p.Name + " (" + short + ")", est})
+		}
+	}
+	for _, s := range sources {
+		if s.estimate > maxDelay {
+			maxDelay = s.estimate
 		}
 	}
 	results := map[string]SyncAdjustment{}

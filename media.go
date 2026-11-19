@@ -57,7 +57,7 @@ func (m *MediaManager) Snapshot() map[string]any {
 	}
 	result := map[string]any{"screen": false, "camera": false, "preview": m.viewer != nil, "receivers": len(m.receivers), "srtHealth": receiverHealth}
 	for kind, p := range m.pipelines {
-		result[kind] = map[string]any{"targets": p.TargetCount(), "running": p.Running()}
+		result[kind] = p.Snapshot()
 	}
 	return result
 }
@@ -273,7 +273,7 @@ func codecArgs(c Configuration, bitrateK, fps int) []string {
 	case "h264_amf":
 		args = append(args, "-quality", "speed")
 	}
-	return append(args, "-pix_fmt", "yuv420p", "-bf", "0", "-g", strconv.Itoa(fps),
+	return append(args, "-pix_fmt", "yuv420p", "-bf", "0", "-g", strconv.Itoa(max(1, fps/2)),
 		"-b:v", fmt.Sprintf("%dk", bitrateK), "-maxrate", fmt.Sprintf("%dk", bitrateK),
 		"-bufsize", fmt.Sprintf("%dk", bitrateK/2))
 }
@@ -309,7 +309,7 @@ func ffmpegArgsPCM(kind string, c Configuration, localPort int, pcm *AudioFormat
 		if pcm != nil {
 			spec = *pcm
 		}
-		args = append(args, "-thread_queue_size", "512", "-f", spec.PCM, "-ar", strconv.Itoa(spec.Rate), "-ac", strconv.Itoa(spec.Channels), "-i", "pipe:0")
+		args = append(args, "-thread_queue_size", "8", "-use_wallclock_as_timestamps", "1", "-f", spec.PCM, "-ar", strconv.Itoa(spec.Rate), "-ac", strconv.Itoa(spec.Channels), "-i", "pipe:0")
 	} else if haveAudio {
 		args = append(args, "-thread_queue_size", "256", "-f", "dshow", "-i", "audio="+audioDevice)
 	}
@@ -348,6 +348,8 @@ type Pipeline struct {
 	relayPorts       map[string]int
 	transport        string
 	packetsForwarded atomic.Uint64
+	sendErrors       atomic.Uint64
+	audio            *pcmTimeline
 }
 
 func startPipeline(kind string, port int, c Configuration, logs *LogBuffer) (*Pipeline, error) {
@@ -363,6 +365,13 @@ func startPipeline(kind string, port int, c Configuration, logs *LogBuffer) (*Pi
 	if err != nil {
 		_ = input.Close()
 		return nil, err
+	}
+	// Socket capacity absorbs scheduler jitter; it does not wait to fill.
+	if err := input.SetReadBuffer(4 * 1024 * 1024); err != nil {
+		logs.Add("UDP receive buffer: " + err.Error())
+	}
+	if err := output.SetWriteBuffer(4 * 1024 * 1024); err != nil {
+		logs.Add("UDP send buffer: " + err.Error())
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	p := &Pipeline{kind: kind, cancel: cancel, captureDone: make(chan struct{}), incoming: input, outgoing: output, logs: logs, relayCancel: map[string]context.CancelFunc{}, relayPorts: map[string]int{}}
@@ -425,7 +434,9 @@ func (p *Pipeline) forwardLoop(ctx context.Context) {
 		p.mu.RUnlock()
 		// MPEG-TS datagrams are immutable; one encoding is copied to each recipient.
 		for _, dst := range peers {
-			_, _ = p.outgoing.WriteToUDP(packet[:n], dst)
+			if _, err := p.outgoing.WriteToUDP(packet[:n], dst); err != nil {
+				p.sendErrors.Add(1)
+			}
 		}
 	}
 }
@@ -453,6 +464,9 @@ func (p *Pipeline) captureLoop(ctx context.Context, binary string, args []string
 				}
 			}
 			pcmReader = r
+			p.mu.Lock()
+			p.audio, _ = r.(*pcmTimeline)
+			p.mu.Unlock()
 			loopArgs, err = ffmpegArgsPCM(p.kind, c, port, &spec)
 			if err != nil {
 				p.logs.Add("WASAPI args: " + err.Error())
@@ -537,4 +551,14 @@ func (w *lineWriter) Write(b []byte) (int, error) {
 		w.pending = w.pending[len(w.pending)-1500:]
 	}
 	return len(b), nil
+}
+
+func (p *Pipeline) Snapshot() map[string]any {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	out := map[string]any{"targets": len(p.targets), "running": p.running, "packetsForwarded": p.packetsForwarded.Load(), "sendErrors": p.sendErrors.Load()}
+	if p.audio != nil {
+		out["audio"] = p.audio.Snapshot()
+	}
+	return out
 }

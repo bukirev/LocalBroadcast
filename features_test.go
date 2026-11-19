@@ -82,3 +82,11 @@ func TestSRTURLsAndMasterPlan(t *testing.T) {
 		t.Fatalf("master must control protocol: %+v", plan)
 	}
 }
+
+func TestSyncIgnoresSlowViewer(t *testing.T) {
+	peers := []Peer{{ID: "presenter", SendScreen: true, RTTMS: 10, LastSeen: time.Now()}, {ID: "viewer", RTTMS: 800, LastSeen: time.Now()}}
+	got := plannedSyncOffsets(defaultConfig(), peers)["presenter:screen"]
+	if got.RenderDelayMS != 0 {
+		t.Fatalf("viewer delayed presenter: %+v", got)
+	}
+}

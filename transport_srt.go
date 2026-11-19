@@ -91,14 +91,16 @@ func runSRTProcess(ctx context.Context, w *transportWorker, logs *LogBuffer, lab
 }
 
 // A receiving process listens for SRT on the LAN, then forwards its MPEG-TS
-// payload to local UDP where OBS or the previewer is already listening.
+// payload to local UDP where OBS or the previewer is already listening. Raw
+// data demux/mux preserves every byte and timestamp without probing codecs or
+// introducing two additional MPEG-TS demux/remux stages.
 func startSRTReceiver(localPort int, c Configuration, logs *LogBuffer) *transportWorker {
 	ctx, cancel := context.WithCancel(context.Background())
 	w := &transportWorker{cancel: cancel, done: make(chan struct{}), latencyBase: c.SRTLatencyMS, ffmpeg: c.FFmpegPath, secret: c.Secret, adaptive: c.SRTAdaptive}
 	go runSRTProcess(ctx, w, logs, "приём:"+strconv.Itoa(localPort), func(latency int) []string {
-		return []string{"-hide_banner", "-loglevel", "warning", "-nostdin", "-fflags", "+genpts", "-analyzeduration", "0", "-probesize", "32768",
-			"-f", "mpegts", "-i", srtURL("0.0.0.0", srtPort(localPort), latency, c.Secret, "listener"),
-			"-map", "0", "-c", "copy", "-muxdelay", "0", "-muxpreload", "0", "-f", "mpegts",
+		return []string{"-hide_banner", "-loglevel", "warning", "-nostdin", "-f", "data", "-raw_packet_size", "1316",
+			"-i", srtURL("0.0.0.0", srtPort(localPort), latency, c.Secret, "listener"),
+			"-map", "0:0", "-c", "copy", "-f", "data", "-flush_packets", "1",
 			fmt.Sprintf("udp://127.0.0.1:%d?pkt_size=1316", localPort)}
 	})
 	logs.Add(fmt.Sprintf("SRT: ожидаем вход на UDP %d, внутренний порт %d", srtPort(localPort), localPort))
@@ -118,9 +120,9 @@ func startSRTSender(localPort int, dst *net.UDPAddr, c Configuration, logs *LogB
 	ctx, cancel := context.WithCancel(context.Background())
 	w := &transportWorker{cancel: cancel, done: make(chan struct{}), latencyBase: c.SRTLatencyMS, ffmpeg: c.FFmpegPath, secret: c.Secret, adaptive: false}
 	go runSRTProcess(ctx, w, logs, "отправка:"+dst.String(), func(latency int) []string {
-		return []string{"-hide_banner", "-loglevel", "warning", "-nostdin", "-fflags", "+genpts", "-analyzeduration", "0", "-probesize", "32768",
-			"-f", "mpegts", "-i", fmt.Sprintf("udp://127.0.0.1:%d?fifo_size=25000&overrun_nonfatal=1", localPort),
-			"-map", "0", "-c", "copy", "-muxdelay", "0", "-muxpreload", "0", "-f", "mpegts",
+		return []string{"-hide_banner", "-loglevel", "warning", "-nostdin", "-f", "data", "-raw_packet_size", "1316",
+			"-i", fmt.Sprintf("udp://127.0.0.1:%d?fifo_size=25000&overrun_nonfatal=1", localPort),
+			"-map", "0:0", "-c", "copy", "-f", "data", "-flush_packets", "1",
 			srtURL(dst.IP.String(), srtPort(dst.Port), latency, c.Secret, "caller")}
 	})
 	return w.stop

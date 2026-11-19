@@ -86,17 +86,23 @@ func formatFromWave(p uintptr) (AudioFormat, int, error) {
 }
 
 func openNativeLoopback(ctx context.Context, logs *LogBuffer) (io.ReadCloser, AudioFormat, error) {
-	reader, writer := io.Pipe()
+	captureCtx, cancel := context.WithCancel(ctx)
+	deferOnError := true
+	defer func() {
+		if deferOnError {
+			cancel()
+		}
+	}()
 	type result struct {
-		f   AudioFormat
-		err error
+		f      AudioFormat
+		stream *pcmTimeline
+		err    error
 	}
 	ready := make(chan result, 1)
 	// COM interface lifetime and all calls remain on the same MTA OS thread.
 	go func() {
 		runtime.LockOSThread()
 		defer runtime.UnlockOSThread()
-		defer writer.Close()
 		r, _, _ := coInit.Call(0, 0)
 		if int32(r) < 0 {
 			ready <- result{err: fmt.Errorf("CoInitializeEx: 0x%08x", uint32(r))}
@@ -135,8 +141,9 @@ func openNativeLoopback(ctx context.Context, logs *LogBuffer) (io.ReadCloser, Au
 			ready <- result{err: err}
 			return
 		}
-		// Shared-mode loopback endpoint; default buffer duration chosen by WASAPI.
-		if err = callCOM(client, 3, 0, 0x00020000, 0, 0, fmtptr, 0); err != nil {
+		// Shared-mode capacity is 100 ms, drained every 5 ms. Duration is in
+		// 100-ns units (not Go nanoseconds); capacity does not delay packet reads.
+		if err = callCOM(client, 3, 0, 0x00020000, uintptr(100*time.Millisecond/(100*time.Nanosecond)), 0, fmtptr, 0); err != nil {
 			ready <- result{err: err}
 			return
 		}
@@ -144,22 +151,32 @@ func openNativeLoopback(ctx context.Context, logs *LogBuffer) (io.ReadCloser, Au
 			ready <- result{err: err}
 			return
 		}
+		stream := newPCMTimeline(f, block)
+		defer stream.Close()
+		var counter, frequency int64
+		kernel := syscall.NewLazyDLL("kernel32.dll")
+		kernel.NewProc("QueryPerformanceFrequency").Call(uintptr(unsafe.Pointer(&frequency)))
+		kernel.NewProc("QueryPerformanceCounter").Call(uintptr(unsafe.Pointer(&counter)))
+		qpcStart := int64(0)
+		if frequency > 0 {
+			qpcStart = counter/frequency*10000000 + counter%frequency*10000000/frequency
+		}
 		if err = callCOM(client, 10); err != nil {
 			ready <- result{err: err}
 			return
 		}
 		defer callCOM(client, 11)
-		ready <- result{f: f}
-		ticker := time.NewTicker(10 * time.Millisecond)
+		ready <- result{f: f, stream: stream}
+		ticker := time.NewTicker(5 * time.Millisecond)
 		defer ticker.Stop()
-		silent := make([]byte, f.Rate*block/100) // 10 ms PCM for idle endpoint
+		var deviceAnchor int64
+		var deviceAnchored bool
 		for {
 			select {
-			case <-ctx.Done():
+			case <-captureCtx.Done():
 				return
 			case <-ticker.C:
 			}
-			had := false
 			for {
 				var size uint32
 				if err = callCOM(capture, 5, uintptr(unsafe.Pointer(&size))); err != nil {
@@ -182,33 +199,47 @@ func openNativeLoopback(ctx context.Context, logs *LogBuffer) (io.ReadCloser, Au
 					return
 				}
 				pcm := make([]byte, int(frames)*block)
+				if stream.silence != 0 {
+					for i := range pcm {
+						pcm[i] = stream.silence
+					}
+				}
 				if flags&2 == 0 && data != 0 {
 					copy(pcm, unsafe.Slice((*byte)(unsafe.Pointer(data)), len(pcm)))
 				}
 				_ = callCOM(capture, 4, uintptr(frames))
-				had = true
-				if _, err = writer.Write(pcm); err != nil {
-					return
+				// QPC is the first frame's timestamp in 100-ns units. Fall back
+				// to the endpoint frame clock only when its timestamp is invalid.
+				position := stream.position() - int64(frames)
+				if qpcStart != 0 && qpc != 0 && flags&4 == 0 {
+					position = (int64(qpc) - qpcStart) * int64(f.Rate) / 10000000
+				} else if deviceAnchored && flags&1 == 0 {
+					position = int64(devicePos) + deviceAnchor
 				}
-			}
-			if !had {
-				// WASAPI may not deliver packets while no sound plays.
-				// Continuous silence keeps the audio timeline advancing.
-				if _, err = writer.Write(silent); err != nil {
-					return
+				if !deviceAnchored || flags&1 != 0 {
+					deviceAnchor = position - int64(devicePos)
+					deviceAnchored = true
 				}
+				stream.push(position, pcm)
 			}
 		}
 	}()
 	select {
 	case r := <-ready:
 		if r.err != nil {
-			_ = reader.Close()
 			return nil, AudioFormat{}, r.err
 		}
-		return reader, r.f, nil
+		deferOnError = false
+		go func() {
+			select {
+			case <-ctx.Done():
+				r.stream.Close()
+			case <-r.stream.done:
+			}
+			cancel()
+		}()
+		return r.stream, r.f, nil
 	case <-ctx.Done():
-		_ = reader.Close()
 		return nil, AudioFormat{}, ctx.Err()
 	}
 }

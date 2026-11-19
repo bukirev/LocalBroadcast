@@ -19,6 +19,7 @@ var uiFiles embed.FS
 
 func (a *Application) serveUI(ctx context.Context) error {
 	mux := http.NewServeMux()
+	a.registerUpdateUI(mux)
 	mux.Handle("/assets/", http.FileServer(http.FS(uiFiles)))
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
@@ -40,8 +41,11 @@ func (a *Application) serveUI(ctx context.Context) error {
 			return
 		}
 		cfg := a.store.Get()
-		status := map[string]any{"config": cfg, "version": appVersion, "bootMode": a.bootMode, "restartRequired": restartRequired(a.bootMode, cfg.Mode), "instanceId": instanceID,
+		status := map[string]any{"config": cfg, "version": appVersion, "bootMode": a.bootMode, "readyForWork": !a.startupBlocked.Load() && !a.updateStopping.Load(), "restartRequired": restartRequired(a.bootMode, cfg.Mode), "instanceId": instanceID,
 			"localIP": lanIP(), "logs": a.logs.List(), "media": a.media.Snapshot(), "ffmpegFound": binaryAvailable(cfg.FFmpegPath), "ffplayFound": binaryAvailable(cfg.FFplayPath)}
+		if a.updates != nil {
+			status["updates"] = a.updates.snapshot()
+		}
 		if a.coordinator != nil {
 			status["peers"] = a.coordinator.peersSnapshot()
 			status["routes"] = a.coordinator.routes()
@@ -219,10 +223,19 @@ func (a *Application) serveUI(ctx context.Context) error {
 		}
 		jsonWrite(w, map[string]bool{"ok": true})
 	})
-	srv := &http.Server{Addr: fmt.Sprintf("127.0.0.1:%d", uiPort), Handler: securityHeaders(mux), ReadHeaderTimeout: 4 * time.Second}
+	srv := &http.Server{Addr: fmt.Sprintf("127.0.0.1:%d", uiPort), Handler: securityHeaders(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == "POST" && (a.startupBlocked.Load() || a.updateStopping.Load()) {
+			http.Error(w, "Программа ожидает завершения обновления", 503)
+			return
+		}
+		mux.ServeHTTP(w, r)
+	})), ReadHeaderTimeout: 4 * time.Second}
 	lis, err := net.Listen("tcp", srv.Addr)
 	if err != nil {
 		return err
+	}
+	if a.uiReady != nil {
+		close(a.uiReady)
 	}
 	a.logs.Add(fmt.Sprintf("Панель управления: http://127.0.0.1:%d", uiPort))
 	go func() {

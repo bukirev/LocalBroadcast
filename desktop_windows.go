@@ -18,6 +18,7 @@ const (
 	desktopCommandRestart = 202
 	desktopCommandExit    = 203
 	desktopCommandHide    = 204
+	desktopCommandUpdate  = 205
 	desktopTrayMessage    = 0x8001
 	desktopStopMessage    = 0x8002
 )
@@ -120,6 +121,12 @@ func desktopRole(mode string) string {
 
 func (a *Application) desktopStatus() string {
 	status := "Сервис работает"
+	if a.updates != nil {
+		u := a.updates.snapshot()
+		if u.Phase != "idle" {
+			status += "\r\nОбновление: " + u.Message
+		}
+	}
 	if a.coordinator != nil {
 		status += fmt.Sprintf(" · устройств: %d", len(a.coordinator.onlinePeers()))
 	} else if a.agent != nil {
@@ -169,7 +176,12 @@ func (a *Application) runDesktop(ctx context.Context, show bool) error {
 		}
 	}
 	command := func(id uintptr) {
+		if a.startupBlocked.Load() || a.updateStopping.Load() {
+			return
+		}
 		switch id {
+		case desktopCommandUpdate:
+			go a.nativeUpdateFlow()
 		case desktopCommandOpen:
 			go openBrowser(fmt.Sprintf("http://127.0.0.1:%d", uiPort))
 		case desktopCommandRestart:
@@ -199,7 +211,7 @@ func (a *Application) runDesktop(ctx context.Context, show bool) error {
 		for _, item := range []struct {
 			id   uintptr
 			text string
-		}{{desktopCommandHide, "Окно управления"}, {desktopCommandOpen, "Панель в браузере"}, {desktopCommandRestart, "Перезапустить"}, {desktopCommandExit, "Завершить Local Broadcast"}} {
+		}{{desktopCommandHide, "Окно управления"}, {desktopCommandOpen, "Панель в браузере"}, {desktopCommandUpdate, "Обновления"}, {desktopCommandRestart, "Перезапустить"}, {desktopCommandExit, "Завершить Local Broadcast"}} {
 			appendMenu.Call(menu, 0, item.id, uintptr(unsafe.Pointer(desktopString(item.text))))
 		}
 		var point desktopPoint
@@ -295,9 +307,10 @@ func (a *Application) runDesktop(ctx context.Context, show bool) error {
 	}
 	control("STATIC", "Local Broadcast "+appVersion+"  ·  "+desktopRole(a.bootMode), 0, 20, 18, 600, 25, 100)
 	statusControl = control("STATIC", a.desktopStatus(), 0, 20, 50, 600, 48, 101)
-	control("BUTTON", "Панель в браузере", 0x10000, 20, 110, 185, 36, desktopCommandOpen)
-	control("BUTTON", "Перезапустить", 0x10000, 220, 110, 185, 36, desktopCommandRestart)
-	control("BUTTON", "Завершить", 0x10000, 420, 110, 185, 36, desktopCommandExit)
+	control("BUTTON", "Панель в браузере", 0x10000, 20, 110, 155, 36, desktopCommandOpen)
+	control("BUTTON", "Обновления", 0x10000, 185, 110, 125, 36, desktopCommandUpdate)
+	control("BUTTON", "Перезапустить", 0x10000, 320, 110, 145, 36, desktopCommandRestart)
+	control("BUTTON", "Завершить", 0x10000, 475, 110, 130, 36, desktopCommandExit)
 	control("STATIC", "Последние события", 0, 20, 163, 600, 22, 102)
 	logsControl = control("EDIT", "", 0x800000|0x200000|0x10000|0x200|0x4|0x40|0x800, 20, 190, 585, 130, 103)
 	footer := control("STATIC", "Крестик скрывает окно в трей. «Завершить» останавливает программу.", 0, 20, 345, 600, 24, 104)
@@ -313,6 +326,9 @@ func (a *Application) runDesktop(ctx context.Context, show bool) error {
 		showWindow()
 	}
 	desktopUser32.NewProc("SetPropW").Call(window, uintptr(unsafe.Pointer(desktopString("LocalBroadcastInitialized"))), 1)
+	if a.desktopReady != nil {
+		close(a.desktopReady)
+	}
 	go func() { <-ctx.Done(); desktopPostMessage.Call(window, desktopStopMessage, 0, 0) }()
 	var message desktopMessage
 	for {

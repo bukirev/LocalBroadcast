@@ -21,6 +21,7 @@
       <button class="nav master-only" data-tab="sync"><span>◷</span> Синхронизация</button>
       <button class="nav master-only" data-tab="obs"><span>▣</span> OBS Studio</button>
       <button class="nav" data-tab="settings"><span>⚙</span> Настройки</button>
+      <button class="nav" data-tab="updates"><span>↻</span> Обновления</button>
       <button class="nav" data-tab="logs"><span>≡</span> Диагностика</button>
     </nav>
     <div class="side-bottom">
@@ -163,6 +164,27 @@
       <div class="settings-footer"><p>Настройки сохраняются локально и применяются при ближайшем цикле управления. Переключение главного режима требует перезапуска.</p><button class="button primary" id="save-config">Сохранить настройки</button></div>
     </section>
 
+
+    <section class="tab" id="tab-updates" hidden>
+      <article class="panel">
+        <div class="panel-title"><div><h2>Обновление этого компьютера</h2><p>Скачать можно во время работы. Установка потребует перезапуска сервиса.</p></div></div>
+        <div class="kv"><span>Установлена</span><strong id="update-current">—</strong></div>
+        <div class="field"><label for="update-channel">Канал</label><select id="update-channel"><option value="stable">Стабильный</option><option value="beta">Тестовый (beta и стабильные)</option></select></div>
+        <div class="action-buttons"><button class="button secondary" id="update-check">Проверить обновления</button><button class="button primary" id="update-download" hidden>Скачать</button><button class="button secondary" id="update-cancel" hidden>Отмена</button></div>
+        <p id="update-status" role="status">Проверка выполняется по вашей команде</p>
+        <progress id="update-progress" max="100" value="0" hidden></progress>
+        <p id="update-release" class="muted small"></p>
+        <pre id="update-notes" class="update-notes"></pre>
+        <p><a id="update-source" href="https://github.com/bukirev/LocalBroadcast/releases" target="_blank" rel="noopener noreferrer">Релизы LocalBroadcast на GitHub</a></p>
+        <div id="update-install-area" hidden>
+          <label><input type="checkbox" id="update-interrupt"> Разрешаю временно прервать передачу/приём для обновления</label>
+          <p class="muted small">Роль, общий ключ, маршруты и сцены OBS сохраняются. Завершите запись и эфир OBS. Другие ПК обновляются на каждом устройстве отдельно.</p>
+          <button class="button primary" id="update-install">Установить и перезапустить</button>
+        </div>
+        <p class="footnote">Обновляется программа. FFmpeg и OBS повторно не скачиваются. Если пакет требует других компонентов, используйте полный установщик.</p>
+        <div class="kv"><span>Запущенный EXE</span><code id="update-exe">—</code></div>
+      </article>
+    </section>
     <section class="tab" id="tab-logs" hidden>
       <article class="panel"><div class="panel-title"><div><h2>Журнал событий</h2><p>Ошибки захвата, подключения и синхронизации</p></div><button class="button secondary tiny" id="copy-logs">Скопировать</button></div>
         <pre class="terminal logs" id="logs-output">Загрузка…</pre>

@@ -15,13 +15,14 @@ import (
 )
 
 const (
-	appVersion      = "0.3.4-beta"
 	discoveryPort   = 39721
 	coordinatorPort = 39780
-	uiPort          = 39888
 	presenterPort   = 5000
 	cameraPortStart = 5101
 )
+
+var appVersion = "0.3.6-beta"
+var uiPort = 39888
 
 type Configuration struct {
 	Schema            int                        `json:"schema"`
@@ -183,14 +184,15 @@ type ConfigStore struct {
 	cfg  Configuration
 }
 
-func newConfigStore(path string) (*ConfigStore, error) {
+func newConfigStore(path string, readOnly ...bool) (*ConfigStore, error) {
+	create := len(readOnly) == 0 || !readOnly[0]
 	s := &ConfigStore{path: path, cfg: defaultConfig()}
 	data, err := os.ReadFile(path)
 	if err == nil {
 		if err = json.Unmarshal(data, &s.cfg); err != nil {
 			return nil, fmt.Errorf("ошибка чтения настроек %s: %w", path, err)
 		}
-	} else if !os.IsNotExist(err) {
+	} else if !create || !os.IsNotExist(err) {
 		return nil, err
 	}
 	if s.cfg.Routing == nil {
@@ -214,7 +216,7 @@ func newConfigStore(path string) (*ConfigStore, error) {
 	if err = validateConfig(&s.cfg); err != nil {
 		return nil, err
 	}
-	if os.IsNotExist(errForFile(path)) {
+	if create && os.IsNotExist(errForFile(path)) {
 		if err := s.writeLocked(); err != nil {
 			return nil, err
 		}

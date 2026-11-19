@@ -1,4 +1,4 @@
-﻿param([string]$Version = '0.3.4-beta')
+﻿param([string]$Version = '0.3.6-beta')
 $ErrorActionPreference = 'Stop'
 $project = Split-Path $PSScriptRoot -Parent
 $stage = Join-Path $project ('dist\package-' + $Version + '-' + [guid]::NewGuid().ToString('N'))
@@ -30,3 +30,9 @@ try {
 $setupHash = (Get-FileHash -LiteralPath $setup -Algorithm SHA256).Hash.ToLowerInvariant()
 Set-Content -LiteralPath ($setup + '.sha256') -Value ($setupHash + '  ' + (Split-Path $setup -Leaf)) -Encoding ascii
 Write-Host $setup
+
+# Core updates use the same production validator as the installed client.
+$update = Join-Path $project ('dist\LocalBroadcast-' + $Version + '-Update-v1-win-x64.zip')
+$builder = Start-Process -FilePath (Join-Path $stage 'LocalBroadcast.exe') -ArgumentList @('-package-version',$Version,'-make-update-package', ('"' + $update + '"'), '-update-notes', ('"' + (Join-Path $project 'RELEASE_NOTES.md') + '"')) -WindowStyle Hidden -Wait -PassThru
+if ($builder.ExitCode -ne 0) { throw 'Update package build/validation failed; existing update archives must not be overwritten' }
+Write-Host $update

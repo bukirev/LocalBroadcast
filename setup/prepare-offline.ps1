@@ -8,7 +8,7 @@ if (!$CacheDirectory) { $CacheDirectory = Join-Path $env:LOCALAPPDATA 'LocalBroa
 $source = [IO.Path]::GetFullPath($SourceDirectory)
 if (!(Test-Path -LiteralPath (Join-Path $source 'LocalBroadcast.exe'))) { throw 'Сначала распакуйте ZIP программы. Запускайте Prepare-Offline.cmd из распакованной папки.' }
 $info = Get-Content -LiteralPath (Join-Path $source 'BUILD_INFO.txt') -First 1
-if ($info -notmatch '(\d+\.\d+\.\d+-beta)') { throw 'Не найдена версия пакета.' }
+if ($info -notmatch '(?<![0-9A-Za-z])((?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?)(?![0-9A-Za-z])') { throw 'Не найдена версия пакета.' }
 $version = $Matches[1]
 $package = [IO.Path]::GetFullPath((Join-Path $Destination ('LocalBroadcast-' + $version + '-Offline')))
 if ($package -eq $source -or $package.StartsWith((Join-Path $source 'setup') + '\', [StringComparison]::OrdinalIgnoreCase) -or $package.StartsWith((Join-Path $source 'docs') + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Выберите другую папку назначения.' }

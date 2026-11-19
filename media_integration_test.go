@@ -1,15 +1,93 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"net"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"testing"
 	"time"
 )
+
+// Probe the actual two-process relay with timestamped, non-codec payloads.
+// This measures relay latency only, excluding screen capture and OBS rendering.
+func TestSRTBitExactLatencyWithRealFFmpeg(t *testing.T) {
+	if os.Getenv("LB_TEST_MEDIA") != "1" {
+		t.Skip("use LB_TEST_MEDIA=1")
+	}
+	ffmpeg, err := exec.LookPath("ffmpeg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	recv, err := listenMediaTestUDP()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer recv.Close()
+	port := recv.LocalAddr().(*net.UDPAddr).Port
+	c := defaultConfig()
+	c.FFmpegPath = ffmpeg
+	c.SRTLatencyMS = 150
+	c.SRTAdaptive = false
+	logs := &LogBuffer{}
+	w := startSRTReceiver(port, c, logs)
+	defer w.stop()
+	inputPort, err := freeUDPLocalPort()
+	if err != nil {
+		t.Fatal(err)
+	}
+	stop := startSRTSender(inputPort, &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: port}, c, logs)
+	defer stop()
+	time.Sleep(time.Second)
+	send, err := net.DialUDP("udp4", nil, &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: inputPort})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer send.Close()
+	const count = 300
+	finished := make(chan error, 1)
+	go func() {
+		ticker := time.NewTicker(5 * time.Millisecond)
+		defer ticker.Stop()
+		for seq := 0; seq < count; seq++ {
+			<-ticker.C
+			b := bytes.Repeat([]byte{byte(seq)}, 1316)
+			binary.BigEndian.PutUint32(b[:4], uint32(seq))
+			binary.BigEndian.PutUint64(b[4:12], uint64(time.Now().UnixNano()))
+			if _, err := send.Write(b); err != nil {
+				finished <- err
+				return
+			}
+		}
+		finished <- nil
+	}()
+	buf := make([]byte, 4096)
+	delays := []float64{}
+	for seq := 0; seq < count; seq++ {
+		recv.SetReadDeadline(time.Now().Add(5 * time.Second))
+		n, _, err := recv.ReadFromUDP(buf)
+		if err != nil {
+			t.Fatalf("seq=%d: %v logs=%v", seq, err, logs.List())
+		}
+		if n != 1316 || int(binary.BigEndian.Uint32(buf[:4])) != seq || !bytes.Equal(buf[12:n], bytes.Repeat([]byte{byte(seq)}, 1304)) {
+			t.Fatalf("payload altered/reordered at seq=%d len=%d", seq, n)
+		}
+		delays = append(delays, float64(time.Now().UnixNano()-int64(binary.BigEndian.Uint64(buf[4:12])))/1e6)
+	}
+	if err := <-finished; err != nil {
+		t.Fatal(err)
+	}
+	sort.Float64s(delays)
+	t.Logf("two FFmpeg relays: %d/300 byte-exact datagrams; latency p50=%.1fms p95=%.1fms max=%.1fms (SRT=150ms)", count, delays[count/2], delays[count*95/100], delays[count-1])
+	if delays[count*95/100] > 750 {
+		t.Fatalf("excess relay latency: %.1fms", delays[count*95/100])
+	}
+}
 
 func TestSRTTransportWithRealFFmpeg(t *testing.T) {
 	if os.Getenv("LB_TEST_MEDIA") != "1" {
@@ -20,12 +98,12 @@ func TestSRTTransportWithRealFFmpeg(t *testing.T) {
 		t.Skip("FFmpeg absent")
 	}
 	result, err := exec.Command(ffmpeg, "-hide_banner", "-protocols").Output()
-	if err != nil || !strings.Contains(string(result), "srt\n") {
+	if err != nil || !strings.Contains(strings.ReplaceAll(string(result), "\r", ""), "srt\n") {
 		t.Skip("FFmpeg built without libsrt")
 	}
 	var recv *net.UDPConn
 	for i := 0; i < 8; i++ {
-		recv, err = net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0})
+		recv, err = listenMediaTestUDP()
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -81,7 +159,7 @@ func TestSRTFanoutTwoReceiversWithRealFFmpeg(t *testing.T) {
 		t.Skip("ffmpeg absent")
 	}
 	out, err := exec.Command(ffmpeg, "-protocols").Output()
-	if err != nil || !strings.Contains(string(out), "srt\n") {
+	if err != nil || !strings.Contains(strings.ReplaceAll(string(out), "\r", ""), "srt\n") {
 		t.Skip("libsrt absent")
 	}
 	c := defaultConfig()
@@ -102,7 +180,7 @@ func TestSRTFanoutTwoReceiversWithRealFFmpeg(t *testing.T) {
 	for i := 0; i < 2; i++ {
 		var r *net.UDPConn
 		for j := 0; j < 8; j++ {
-			r, err = net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0})
+			r, err = listenMediaTestUDP()
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -118,7 +196,7 @@ func TestSRTFanoutTwoReceiversWithRealFFmpeg(t *testing.T) {
 		receivers = append(receivers, r)
 		workers = append(workers, startSRTReceiver(r.LocalAddr().(*net.UDPAddr).Port, c, logs))
 	}
-	input, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: 0})
+	input, err := listenMediaTestUDP()
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,4 +242,14 @@ func TestSRTFanoutTwoReceiversWithRealFFmpeg(t *testing.T) {
 			t.Fatalf("receiver %d got malformed MPEG TS n=%d", i, n)
 		}
 	}
+}
+
+func listenMediaTestUDP() (*net.UDPConn, error) {
+	for port := 21000; port < 45000; port++ {
+		c, err := net.ListenUDP("udp4", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1), Port: port})
+		if err == nil {
+			return c, nil
+		}
+	}
+	return nil, fmt.Errorf("no free media test port")
 }

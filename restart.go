@@ -22,7 +22,7 @@ func (a *Application) requestRestart() error {
 	if err != nil {
 		return err
 	}
-	args := []string{"-no-browser", "-config", a.store.path, "-restart-parent", strconv.Itoa(os.Getpid())}
+	args := []string{"-no-browser", "-config", a.store.path, "-restart-parent", strconv.Itoa(os.Getpid()), "-ui-port", strconv.Itoa(uiPort)}
 	args = append(args, desktopRestartArgs()...)
 	cmd := exec.Command(executable, args...)
 	prepareHeadlessCommand(cmd)
