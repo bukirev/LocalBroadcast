@@ -1,6 +1,6 @@
-Local Broadcast 0.3.8-beta — 2026-11-20
-480p/720p/1080p output; fixed 15/30/60 FPS and content-adaptive 15-30 target.
-Nine real FFmpeg profile tests, portrait, continuous adaptive AAC, 720p WASAPI, UI persistence checked.
-Live capture throughput can be below target on existing and new builds.
-Updater protocol 1; dependency set unchanged. OBS end-to-end latency unresolved.
-See docs/SCREEN_QUALITY_2026-11-20.md.
+Local Broadcast 0.3.8-beta.1 — 2026-11-20
+Timestamped PCM transport to FFmpeg fixes observed live audio stall/silence.
+Six PCM round trips, timestamp gap, live music and controlled minute-long supervisor passed.
+WASAPI recovery, QSV fallback and 720p AV regressions checked.
+Updater protocol 1; dependency set unchanged. Remote listening acceptance pending.
+See docs/AUDIO_CONTINUOUS_2026-11-20.md.

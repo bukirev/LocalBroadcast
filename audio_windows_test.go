@@ -59,14 +59,18 @@ func testWASAPILiveAVProfile(t *testing.T, c Configuration, minVideoFrames int) 
 		}
 		defer func() { player.Process.Kill(); player.Wait() }()
 	}
-	args, err := ffmpegArgsPCM("screen", c, 16900, &f)
+	args, err := ffmpegArgsPacketPCM("screen", c, 16900, &f)
 	if err != nil {
 		t.Fatal(err)
 	}
 	file := filepath.Join(t.TempDir(), "av.ts")
 	args = append(args[:len(args)-1], "-t", "4", file)
 	cmd := exec.CommandContext(ctx, binaryPath("ffmpeg"), args...)
-	cmd.Stdin = r
+	packets, err := newPCMPacketStream(r.(*pcmTimeline), f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd.Stdin = packets
 	var diagnostics bytes.Buffer
 	cmd.Stderr = &diagnostics
 	prepareHeadlessCommand(cmd)

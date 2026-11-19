@@ -92,6 +92,9 @@ func TestDiagnosticCaptureEncoderQueue(t *testing.T) {
 			format = &f
 		}
 		args, err := ffmpegArgsPCM("screen", c, sink.LocalAddr().(*net.UDPAddr).Port, format)
+		if audio {
+			args, err = ffmpegArgsPacketPCM("screen", c, sink.LocalAddr().(*net.UDPAddr).Port, format)
+		}
 		if err != nil {
 			cancel()
 			t.Fatal(err)
@@ -108,7 +111,11 @@ func TestDiagnosticCaptureEncoderQueue(t *testing.T) {
 		cmd.Stderr = trace
 		cmd.WaitDelay = time.Second
 		if reader != nil {
-			cmd.Stdin = reader
+			packets, e := newPCMPacketStream(reader.(*pcmTimeline), *format)
+			if e != nil {
+				t.Fatal(e)
+			}
+			cmd.Stdin = packets
 		}
 		prepareHeadlessCommand(cmd)
 		err = cmd.Run()

@@ -280,6 +280,29 @@ func codecArgs(c Configuration, bitrateK, fps int) []string {
 func ffmpegArgs(kind string, c Configuration, localPort int) ([]string, error) {
 	return ffmpegArgsPCM(kind, c, localPort, nil)
 }
+
+func ffmpegArgsPacketPCM(kind string, c Configuration, localPort int, pcm *AudioFormat) ([]string, error) {
+	args, err := ffmpegArgsPCM(kind, c, localPort, pcm)
+	if err != nil {
+		return nil, err
+	}
+	start, end := -1, -1
+	for i, v := range args {
+		if v == "-thread_queue_size" && start < 0 {
+			start = i
+		}
+		if v == "pipe:0" {
+			end = i + 1
+			break
+		}
+	}
+	if start < 0 || end < 0 {
+		return nil, fmt.Errorf("timestamped PCM input missing")
+	}
+	out := append([]string{}, args[:start]...)
+	out = append(out, "-thread_queue_size", "8", "-f", "matroska", "-i", "pipe:0")
+	return append(out, args[end:]...), nil
+}
 func ffmpegArgsPCM(kind string, c Configuration, localPort int, pcm *AudioFormat) ([]string, error) {
 	args := []string{"-hide_banner", "-loglevel", "warning", "-nostdin", "-fflags", "+genpts"}
 	var audioDevice string
@@ -516,7 +539,16 @@ func (p *Pipeline) captureLoop(ctx context.Context, binary string, c Configurati
 				audioDone = p.audio.done
 			}
 			p.mu.Unlock()
-			loopArgs, err = ffmpegArgsPCM(p.kind, c, port, &spec)
+			packetStream, packetErr := newPCMPacketStream(p.audio, spec)
+			if packetErr != nil {
+				p.logs.Add("WASAPI packets: " + packetErr.Error())
+				cancel()
+				r.Close()
+				return
+			}
+			pcmReader = packetStream
+			p.logs.Add("WASAPI: передаём PCM с метками времени захвата")
+			loopArgs, err = ffmpegArgsPacketPCM(p.kind, c, port, &spec)
 			if err != nil {
 				p.logs.Add("WASAPI args: " + err.Error())
 				cancel()

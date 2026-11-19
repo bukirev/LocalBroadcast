@@ -268,7 +268,7 @@ func TestDiagnosticNativeEncodedAudio(t *testing.T) {
 	c.ScreenFPS = 30
 	c.ScreenBitrateK = 6000
 	c.Encoder = "libx264"
-	args, err := ffmpegArgsPCM("screen", c, 16900, &f)
+	args, err := ffmpegArgsPacketPCM("screen", c, 16900, &f)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,7 +280,7 @@ func TestDiagnosticNativeEncodedAudio(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { player.Process.Kill(); player.Wait() }()
-	raw, err := os.Create(filepath.Join(dir, "native-encoder-input.f32"))
+	raw, err := os.Create(filepath.Join(dir, "native-encoder-input.mka"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -292,7 +292,11 @@ func TestDiagnosticNativeEncodedAudio(t *testing.T) {
 	defer log.Close()
 	cmd := exec.CommandContext(ctx, binaryPath("ffmpeg"), args...)
 	prepareHeadlessCommand(cmd)
-	cmd.Stdin = io.TeeReader(r, raw)
+	packets, err := newPCMPacketStream(r.(*pcmTimeline), f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd.Stdin = io.TeeReader(packets, raw)
 	cmd.Stderr = log
 	cmd.WaitDelay = time.Second
 	if err = cmd.Run(); err != nil {
