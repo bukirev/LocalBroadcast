@@ -235,7 +235,7 @@ func (m *MediaManager) syncReceiversLocked(ports []int, c Configuration) {
 func pipelineSignature(kind string, c Configuration) string {
 	var selected any
 	if kind == "screen" {
-		selected = []any{c.FFmpegPath, c.ScreenFPS, c.ScreenBitrateK, c.ScreenAudioMode, c.ScreenAudioDevice, c.ScreenAudioEndpoint, c.ScreenMonitor, c.Encoder}
+		selected = []any{c.FFmpegPath, c.ScreenFPS, c.ScreenFPSMode, c.ScreenWidth, c.ScreenHeight, c.ScreenBitrateK, c.ScreenAudioMode, c.ScreenAudioDevice, c.ScreenAudioEndpoint, c.ScreenMonitor, c.Encoder}
 	}
 	if kind == "camera" {
 		selected = []any{c.FFmpegPath, c.CameraFPS, c.CameraBitrateK, c.CameraWidth, c.CameraHeight, c.CameraDevice, c.CameraAudioDevice, c.Encoder}
@@ -284,7 +284,7 @@ func ffmpegArgsPCM(kind string, c Configuration, localPort int, pcm *AudioFormat
 	args := []string{"-hide_banner", "-loglevel", "warning", "-nostdin", "-fflags", "+genpts"}
 	var audioDevice string
 	if kind == "screen" {
-		args = append(args, "-f", "gdigrab", "-framerate", strconv.Itoa(c.ScreenFPS), "-draw_mouse", "1")
+		args = append(args, "-f", "gdigrab", "-framerate", strconv.Itoa(screenCaptureFPS(c)), "-draw_mouse", "1")
 		if c.ScreenMonitor != "" {
 			displays, err := captureDisplays()
 			if err != nil {
@@ -331,14 +331,17 @@ func ffmpegArgsPCM(kind string, c Configuration, localPort int, pcm *AudioFormat
 	} else {
 		args = append(args, "-an")
 	}
-	bitrate, fps := c.ScreenBitrateK, c.ScreenFPS
+	bitrate, fps := c.ScreenBitrateK, screenCaptureFPS(c)
 	if kind == "camera" {
 		bitrate, fps = c.CameraBitrateK, c.CameraFPS
 	}
 	args = append(args, codecArgs(c, bitrate, fps)...)
 	// Scale only presenter capture (avoid source desktop resolution varying per monitor).
 	if kind == "screen" {
-		args = append(args, "-vf", "scale=1920:1080:flags=fast_bilinear")
+		args = append(args, "-vf", screenVideoFilter(c))
+		if c.ScreenFPSMode == "adaptive" {
+			args = append(args, "-fps_mode:v", "vfr", "-force_key_frames", "expr:gte(t,n_forced*0.5)")
+		}
 	}
 	args = append(args, "-muxdelay", "0", "-muxpreload", "0", "-flush_packets", "1",
 		"-f", "mpegts", fmt.Sprintf("udp://127.0.0.1:%d?pkt_size=1316", localPort))
@@ -346,24 +349,26 @@ func ffmpegArgsPCM(kind string, c Configuration, localPort int, pcm *AudioFormat
 }
 
 type Pipeline struct {
-	kind             string
-	signature        string
-	mu               sync.RWMutex
-	targets          []*net.UDPAddr
-	running          bool
-	cancel           context.CancelFunc
-	captureDone      chan struct{}
-	incoming         *net.UDPConn
-	outgoing         *net.UDPConn
-	logs             *LogBuffer
-	relayCancel      map[string]context.CancelFunc
-	relayPorts       map[string]int
-	transport        string
-	packetsForwarded atomic.Uint64
-	sendErrors       atomic.Uint64
-	audio            *pcmTimeline
-	requestedEncoder string
-	encoder          string
+	kind                     string
+	signature                string
+	mu                       sync.RWMutex
+	targets                  []*net.UDPAddr
+	running                  bool
+	cancel                   context.CancelFunc
+	captureDone              chan struct{}
+	incoming                 *net.UDPConn
+	outgoing                 *net.UDPConn
+	logs                     *LogBuffer
+	relayCancel              map[string]context.CancelFunc
+	relayPorts               map[string]int
+	transport                string
+	packetsForwarded         atomic.Uint64
+	sendErrors               atomic.Uint64
+	audio                    *pcmTimeline
+	requestedEncoder         string
+	encoder                  string
+	width, height, targetFPS int
+	fpsMode                  string
 }
 
 func startPipeline(kind string, port int, c Configuration, logs *LogBuffer) (*Pipeline, error) {
@@ -389,6 +394,19 @@ func startPipeline(kind string, port int, c Configuration, logs *LogBuffer) (*Pi
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	p := &Pipeline{kind: kind, cancel: cancel, captureDone: make(chan struct{}), incoming: input, outgoing: output, logs: logs, relayCancel: map[string]context.CancelFunc{}, relayPorts: map[string]int{}}
+	if kind == "screen" {
+		p.width, p.height = screenOutputSize(c)
+		p.targetFPS = screenCaptureFPS(c)
+		p.fpsMode = c.ScreenFPSMode
+		if p.fpsMode == "" {
+			p.fpsMode = "fixed"
+		}
+	} else {
+		p.width = c.CameraWidth
+		p.height = c.CameraHeight
+		p.targetFPS = c.CameraFPS
+		p.fpsMode = "fixed"
+	}
 	go p.forwardLoop(ctx)
 	go p.captureLoop(ctx, binaryPath(c.FFmpegPath), c, port)
 	return p, nil
@@ -611,7 +629,7 @@ func (w *lineWriter) Write(b []byte) (int, error) {
 func (p *Pipeline) Snapshot() map[string]any {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	out := map[string]any{"targets": len(p.targets), "running": p.running, "packetsForwarded": p.packetsForwarded.Load(), "sendErrors": p.sendErrors.Load(), "encoder": p.encoder, "requestedEncoder": p.requestedEncoder}
+	out := map[string]any{"targets": len(p.targets), "running": p.running, "packetsForwarded": p.packetsForwarded.Load(), "sendErrors": p.sendErrors.Load(), "encoder": p.encoder, "requestedEncoder": p.requestedEncoder, "width": p.width, "height": p.height, "targetFPS": p.targetFPS, "fpsMode": p.fpsMode}
 	if p.audio != nil {
 		out["audio"] = p.audio.Snapshot()
 	}

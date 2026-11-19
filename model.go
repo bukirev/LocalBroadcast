@@ -21,7 +21,7 @@ const (
 	cameraPortStart = 5101
 )
 
-var appVersion = "0.3.7-beta.3"
+var appVersion = "0.3.8-beta"
 var uiPort = 39888
 
 type Configuration struct {
@@ -38,6 +38,9 @@ type Configuration struct {
 	WatchPresenter      bool                       `json:"watchPresenter"`
 	ScreenMonitor       string                     `json:"screenMonitor"`
 	ScreenAudioEndpoint string                     `json:"screenAudioEndpoint"`
+	ScreenWidth         int                        `json:"screenWidth"`
+	ScreenHeight        int                        `json:"screenHeight"`
+	ScreenFPSMode       string                     `json:"screenFpsMode"`
 	ScreenFPS           int                        `json:"screenFps"`
 	ScreenBitrateK      int                        `json:"screenBitrateK"`
 	CameraFPS           int                        `json:"cameraFps"`
@@ -87,7 +90,7 @@ func defaultConfig() Configuration {
 	}
 	return Configuration{
 		Schema: 2, NodeID: randomHex(8), Name: name, Mode: "viewer", Secret: randomHex(16),
-		AutoStart: true, ScreenAudioMode: "wasapi", Transport: "udp", SRTLatencyMS: 180, SRTAdaptive: true, SyncEnabled: true, SyncOffsets: map[string]SyncTuning{}, ScreenFPS: 30, ScreenBitrateK: 6000, CameraFPS: 30, CameraBitrateK: 2500,
+		AutoStart: true, ScreenAudioMode: "wasapi", Transport: "udp", SRTLatencyMS: 180, SRTAdaptive: true, SyncEnabled: true, SyncOffsets: map[string]SyncTuning{}, ScreenWidth: 1920, ScreenHeight: 1080, ScreenFPSMode: "fixed", ScreenFPS: 30, ScreenBitrateK: 6000, CameraFPS: 30, CameraBitrateK: 2500,
 		CameraWidth: 1280, CameraHeight: 720, Encoder: "libx264", FFmpegPath: "ffmpeg", FFplayPath: "ffplay",
 		ObsURL: "ws://127.0.0.1:4455", ObsScene: "Local Broadcast", ObsAutoSync: true, AutoLaunchOBS: true,
 		Routing: map[string]map[string]bool{}, CameraPorts: map[string]int{},
@@ -128,6 +131,19 @@ func validateConfig(c *Configuration) error {
 	}
 	if len(c.Secret) < 16 {
 		return errors.New("ключ системы должен содержать не менее 16 символов")
+	}
+	if c.ScreenWidth == 0 && c.ScreenHeight == 0 {
+		c.ScreenWidth = 1920
+		c.ScreenHeight = 1080
+	}
+	if c.ScreenFPSMode == "" {
+		c.ScreenFPSMode = "fixed"
+	}
+	if c.ScreenFPSMode != "fixed" && c.ScreenFPSMode != "adaptive" {
+		return errors.New("неподдерживаемый режим FPS экрана")
+	}
+	if !((c.ScreenWidth == 854 && c.ScreenHeight == 480) || (c.ScreenWidth == 1280 && c.ScreenHeight == 720) || (c.ScreenWidth == 1920 && c.ScreenHeight == 1080)) {
+		return errors.New("выберите разрешение экрана 480p, 720p или 1080p")
 	}
 	if c.ScreenFPS < 5 || c.ScreenFPS > 60 || c.CameraFPS < 5 || c.CameraFPS > 60 {
 		return errors.New("FPS должен быть в пределах 5–60")

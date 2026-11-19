@@ -82,8 +82,14 @@ function renderOBS(peers){const root=$('obs-camera-ports');clear(root);
 const fields = ['name','mode','secret','masterIp','sendScreen','sendCamera','watchPresenter','autoStart','launchAtLogin','screenFps','screenBitrateK','cameraFps','cameraBitrateK','cameraWidth','cameraHeight','cameraDevice','screenMonitor','screenAudioEndpoint','screenAudioDevice','cameraAudioDevice','screenAudioMode','transport','srtLatencyMs','srtAdaptive','syncEnabled','encoder','ffmpegPath','ffplayPath','obsUrl','obsPassword','obsScene','obsExePath','autoLaunchObs','obsAutoSync'];
 const checks = new Set(['sendScreen','sendCamera','watchPresenter','autoStart','launchAtLogin','autoLaunchObs','obsAutoSync','srtAdaptive','syncEnabled']);
 const numeric = new Set(['screenFps','screenBitrateK','cameraFps','cameraBitrateK','cameraWidth','cameraHeight','srtLatencyMs']);
-function populateForm(cfg){for(const k of fields){const input=$('f-'+k);if(!input)continue;if(checks.has(k))input.checked=!!cfg[k];else {if(['screenMonitor','screenAudioEndpoint'].includes(k))ensureDeviceOption(input,cfg[k]||'');input.value=cfg[k]??'';}}settingsDirty=false;updateVisibleFields();}
-function collectForm(){const cfg=structuredClone(current.config);for(const k of fields){const input=$('f-'+k);if(!input)continue;cfg[k]=checks.has(k)?input.checked:numeric.has(k)?Number(input.value):input.value.trim();}return cfg;}
+function populateForm(cfg){for(const k of fields){const input=$('f-'+k);if(!input)continue;if(checks.has(k))input.checked=!!cfg[k];else {if(['screenMonitor','screenAudioEndpoint'].includes(k))ensureDeviceOption(input,cfg[k]||'');if(k==='screenFps')ensureFPSOption(cfg.screenFps);input.value=cfg[k]??'';}}
+ $('f-screenResolution').value=(cfg.screenWidth||1920)+'x'+(cfg.screenHeight||1080);
+ if(cfg.screenFpsMode==='adaptive')$('f-screenFps').value='adaptive';
+ settingsDirty=false;updateVisibleFields();}
+function ensureFPSOption(fps){const input=$('f-screenFps');if(fps&&!Array.from(input.options).some(o=>o.value===String(fps))){const o=document.createElement('option');o.value=String(fps);o.textContent=fps+' (сохранённое значение)';input.append(o)}}
+function collectForm(){const cfg=structuredClone(current.config);for(const k of fields){const input=$('f-'+k);if(!input)continue;cfg[k]=checks.has(k)?input.checked:numeric.has(k)?Number(input.value):input.value.trim();}const size=$('f-screenResolution').value.split('x').map(Number);cfg.screenWidth=size[0];cfg.screenHeight=size[1];
+ cfg.screenFpsMode=$('f-screenFps').value==='adaptive'?'adaptive':'fixed';if(cfg.screenFpsMode==='adaptive')cfg.screenFps=30;
+ return cfg;}
 function updateVisibleFields(){
  const mode=$('f-mode').value;
  const screen=mode==='presenter'||(mode==='custom'&&$('f-sendScreen').checked);
@@ -144,6 +150,8 @@ function render(state){current=state;
  renderRoutes(state.routes||[]);renderOBS(state.peers||[]);renderSync(state.sync||{});
  $('route-transport').textContent=(state.config.transport==='srt'?'SRT + LOCAL UDP':'UDP UNICAST');
  $('logs-output').textContent=(state.logs||[]).join('\n')||'Журнал пока пуст';
+ const video=state.media?.screen;
+ $('screen-output-status').textContent=video&&video.running&&video.width?`Профиль передачи: ${video.width} × ${video.height}, ${video.fpsMode==='adaptive'?'адаптивный 15–30 FPS':video.targetFPS+' FPS'}.`:'';
  const encoders=[state.media?.screen,state.media?.camera].filter(x=>x&&typeof x==='object'&&x.encoder);
  $('encoder-status').textContent=encoders.map(x=>x.encoder!==x.requestedEncoder?`Выбран ${x.requestedEncoder}; используется CPU — x264 после ошибки запуска.`:`Используется ${x.encoder}.`).join(' ');
 
@@ -155,6 +163,7 @@ function init(){for(const b of document.querySelectorAll('.nav'))b.addEventListe
  $('toggle-secret').addEventListener('click',()=>{const v=$('f-secret');v.type=v.type==='password'?'text':'password';$('toggle-secret').textContent=v.type==='password'?'Показать':'Скрыть';});
  $('f-mode').addEventListener('change',e=>{updateModeFlags(e.target.value);settingsDirty=true;updateVisibleFields();});
  for(const k of fields){const input=$('f-'+k);if(input)input.addEventListener('input',()=>{settingsDirty=true;if(['sendScreen','sendCamera','screenAudioMode'].includes(k))updateVisibleFields();})}
+ $('f-screenResolution').addEventListener('change',()=>{settingsDirty=true});
  $('save-config').addEventListener('click',saveSettings);
  $('restart-app').addEventListener('click',restartApp);
  initUpdates();

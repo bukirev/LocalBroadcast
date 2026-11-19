@@ -21,6 +21,29 @@ func TestWASAPILiveAVEncoding(t *testing.T) {
 	if os.Getenv("LB_TEST_AUDIO") != "1" {
 		t.Skip("use LB_TEST_AUDIO=1")
 	}
+	c := defaultConfig()
+	c.ScreenAudioMode = "wasapi"
+	c.Encoder = "libx264"
+	c.ScreenFPS = 15
+	c.ScreenBitrateK = 3000
+	testWASAPILiveAVProfile(t, c, 55)
+}
+func TestWASAPILive720Adaptive(t *testing.T) {
+	if os.Getenv("LB_TEST_AUDIO") != "1" {
+		t.Skip("use LB_TEST_AUDIO=1")
+	}
+	c := defaultConfig()
+	c.ScreenAudioMode = "wasapi"
+	c.Encoder = "libx264"
+	c.ScreenWidth = 1280
+	c.ScreenHeight = 720
+	c.ScreenFPSMode = "adaptive"
+	c.ScreenBitrateK = 2000
+	testWASAPILiveAVProfile(t, c, 8)
+}
+
+func testWASAPILiveAVProfile(t *testing.T, c Configuration, minVideoFrames int) {
+	t.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	r, f, err := openNativeLoopback(ctx, &LogBuffer{})
@@ -28,11 +51,14 @@ func TestWASAPILiveAVEncoding(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer r.Close()
-	c := defaultConfig()
-	c.ScreenAudioMode = "wasapi"
-	c.Encoder = "libx264"
-	c.ScreenFPS = 15
-	c.ScreenBitrateK = 3000
+	if c.ScreenFPSMode == "adaptive" {
+		player := exec.CommandContext(ctx, binaryPath("ffplay"), "-hide_banner", "-loglevel", "error", "-nodisp", "-autoexit", "-f", "lavfi", "-i", "sine=frequency=1000:sample_rate=48000:duration=6", "-af", "volume=0.08")
+		prepareHeadlessCommand(player)
+		if err = player.Start(); err != nil {
+			t.Fatal(err)
+		}
+		defer func() { player.Process.Kill(); player.Wait() }()
+	}
 	args, err := ffmpegArgsPCM("screen", c, 16900, &f)
 	if err != nil {
 		t.Fatal(err)
@@ -49,7 +75,7 @@ func TestWASAPILiveAVEncoding(t *testing.T) {
 	if err = cmd.Run(); err != nil {
 		t.Fatalf("encode: %v %s", err, diagnostics.String())
 	}
-	probe := exec.CommandContext(ctx, binaryPath("ffprobe"), "-v", "error", "-count_frames", "-show_entries", "stream=codec_name,start_time,duration,nb_read_frames", "-of", "json", file)
+	probe := exec.CommandContext(ctx, binaryPath("ffprobe"), "-v", "error", "-count_frames", "-show_entries", "stream=codec_name,start_time,duration,nb_read_frames,width,height", "-of", "json", file)
 	data, err := probe.Output()
 	if err != nil {
 		t.Fatal(err)
@@ -57,6 +83,8 @@ func TestWASAPILiveAVEncoding(t *testing.T) {
 	var result struct {
 		Streams []struct {
 			Codec    string  `json:"codec_name"`
+			Width    int     `json:"width"`
+			Height   int     `json:"height"`
 			Start    float64 `json:"start_time,string"`
 			Duration float64 `json:"duration,string"`
 			Frames   int     `json:"nb_read_frames,string"`
@@ -69,12 +97,34 @@ func TestWASAPILiveAVEncoding(t *testing.T) {
 		t.Fatalf("expected H264 and AAC: %s", data)
 	}
 	v, a := result.Streams[0], result.Streams[1]
-	if v.Codec != "h264" || a.Codec != "aac" || math.Abs(v.Start-a.Start) > 0.15 || math.Abs(v.Duration-a.Duration) > 0.2 || v.Frames < 55 {
+	w, h := screenOutputSize(c)
+	if v.Width != w || v.Height != h {
+		t.Fatalf("wrong output size: %s", data)
+	}
+	if v.Codec != "h264" || a.Codec != "aac" || math.Abs(v.Start-a.Start) > 0.15 || math.Abs(v.Duration-a.Duration) > 0.2 || v.Frames < minVideoFrames {
 		t.Fatalf("bad A/V clock: %s; diagnostics=%s", data, diagnostics.String())
 	}
 	decode := exec.CommandContext(ctx, binaryPath("ffmpeg"), "-hide_banner", "-loglevel", "error", "-xerror", "-i", file, "-f", "null", "-")
 	if out, err := decode.CombinedOutput(); err != nil {
 		t.Fatalf("decode: %v %s", err, out)
+	}
+	if c.ScreenFPSMode == "adaptive" {
+		decodeAudio := exec.CommandContext(ctx, binaryPath("ffmpeg"), "-v", "error", "-i", file, "-map", "0:a:0", "-f", "f32le", "pipe:1")
+		prepareHeadlessCommand(decodeAudio)
+		pcm, err := decodeAudio.Output()
+		if err != nil {
+			t.Fatal(err)
+		}
+		sum := 0.
+		for i := 0; i+4 <= len(pcm); i += 4 {
+			x := float64(math.Float32frombits(binary.LittleEndian.Uint32(pcm[i:])))
+			sum += x * x
+		}
+		rms := math.Sqrt(sum / float64(len(pcm)/4))
+		if len(pcm) == 0 || rms < 0.00001 {
+			t.Fatalf("adaptive AAC lost real loopback tone: rms=%g", rms)
+		}
+		t.Logf("adaptive native AAC decoded tone RMS=%g", rms)
 	}
 	t.Logf("live gdigrab+WASAPI: video %d frames / %.3fs, audio %d frames / %.3fs, start difference %.1fms; timeline=%v", v.Frames, v.Duration, a.Frames, a.Duration, 1000*math.Abs(v.Start-a.Start), r.(*pcmTimeline).Snapshot())
 }

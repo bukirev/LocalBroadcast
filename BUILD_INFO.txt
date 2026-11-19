@@ -1,5 +1,6 @@
-Local Broadcast 0.3.7-beta.3 — 2026-11-19
-Fallback to CPU x264 on recognized hardware encoder initialization failure.
-Real QSV failure recovered video/AAC; WASAPI EOF recovery regression passed.
-Updater protocol 1; dependency set unchanged. OBS latency unresolved.
-See docs/ENCODER_RECOVERY_2026-11-19.md.
+Local Broadcast 0.3.8-beta — 2026-11-20
+480p/720p/1080p output; fixed 15/30/60 FPS and content-adaptive 15-30 target.
+Nine real FFmpeg profile tests, portrait, continuous adaptive AAC, 720p WASAPI, UI persistence checked.
+Live capture throughput can be below target on existing and new builds.
+Updater protocol 1; dependency set unchanged. OBS end-to-end latency unresolved.
+See docs/SCREEN_QUALITY_2026-11-20.md.

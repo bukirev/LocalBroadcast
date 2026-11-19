@@ -33,7 +33,10 @@ func TestUnavailableQSVFallsBackToLiveAV(t *testing.T) {
 	c.FFmpegPath = ffmpeg
 	c.Encoder = "h264_qsv"
 	c.ScreenAudioMode = "wasapi"
-	c.ScreenFPS = 15
+	c.ScreenFPS = 30
+	c.ScreenWidth = 1280
+	c.ScreenHeight = 720
+	c.ScreenFPSMode = "adaptive"
 	c.ScreenBitrateK = 2000
 	logs := &LogBuffer{}
 	p, err := startPipeline("screen", port, c, logs)
@@ -68,6 +71,9 @@ func TestUnavailableQSVFallsBackToLiveAV(t *testing.T) {
 			}
 		}
 		if video >= 30 && audio >= 12 {
+			if s["width"] != 1280 || s["height"] != 720 || s["fpsMode"] != "adaptive" {
+				t.Fatal("fallback lost screen quality profile")
+			}
 			if s["requestedEncoder"] != "h264_qsv" || c.Encoder != "h264_qsv" {
 				t.Fatal("fallback overwrote requested configuration")
 			}
