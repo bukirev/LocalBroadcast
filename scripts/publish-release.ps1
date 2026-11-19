@@ -20,9 +20,16 @@ if ($version.Contains('-')) { $create += @('--prerelease','--latest=false') }
 $create += @($files | ForEach-Object FullName)
 & gh @create
 if ($LASTEXITCODE -ne 0) { throw 'Draft creation failed. Inspect existing release; never clobber public assets.' }
+# Draft releases are not resolved reliably by REST /releases/tags/{tag}.
+# Resolve the authenticated draft list once, then verify its numeric release ID.
+$draftRaw = & gh api "repos/$repo/releases?per_page=100"
+if ($LASTEXITCODE -ne 0) { throw 'Cannot list draft releases' }
+$drafts = @(($draftRaw -join "`n" | ConvertFrom-Json) | Where-Object { $_.tag_name -ceq $Tag -and $_.draft })
+if ($drafts.Count -ne 1) { throw 'Expected exactly one newly created draft' }
+$releaseID = $drafts[0].id
 $validated = $false
 for ($attempt=0; $attempt -lt 6; $attempt++) {
-    $raw = & gh api "repos/$repo/releases/tags/$Tag"
+    $raw = & gh api "repos/$repo/releases/$releaseID"
     if ($LASTEXITCODE -ne 0) { throw 'Cannot read release metadata' }
     $release = ($raw -join "`n") | ConvertFrom-Json
     if (!$release.draft -or $release.tag_name -cne $Tag -or [bool]$release.prerelease -ne $version.Contains('-')) { throw 'Unexpected draft/channel' }
