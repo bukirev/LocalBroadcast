@@ -163,7 +163,16 @@ func (a *Application) serveUI(ctx context.Context) error {
 		if len(out) > 12000 {
 			out = out[len(out)-12000:]
 		}
-		jsonWrite(w, map[string]any{"output": out})
+		displays, displayErr := captureDisplays()
+		audioOutputs, audioErr := captureAudioOutputs()
+		warnings := []string{}
+		if displayErr != nil {
+			warnings = append(warnings, displayErr.Error())
+		}
+		if audioErr != nil {
+			warnings = append(warnings, audioErr.Error())
+		}
+		jsonWrite(w, map[string]any{"output": out, "displays": displays, "audioOutputs": audioOutputs, "warnings": warnings})
 	})
 	mux.HandleFunc("/api/action", func(w http.ResponseWriter, r *http.Request) {
 		if !requireUIWrite(w, r) {

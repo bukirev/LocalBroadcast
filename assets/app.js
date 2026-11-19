@@ -79,10 +79,10 @@ function renderSync(adjustments){
 function renderOBS(peers){const root=$('obs-camera-ports');clear(root);
  for(const p of peers||[]){if(!p.sendCamera)continue;const n=el('div','kv');n.append(el('span','',p.name),el('code','',`udp://0.0.0.0:${p.cameraPort}`));root.append(n)}
 }
-const fields = ['name','mode','secret','masterIp','sendScreen','sendCamera','watchPresenter','autoStart','launchAtLogin','screenFps','screenBitrateK','cameraFps','cameraBitrateK','cameraWidth','cameraHeight','cameraDevice','screenAudioDevice','cameraAudioDevice','screenAudioMode','transport','srtLatencyMs','srtAdaptive','syncEnabled','encoder','ffmpegPath','ffplayPath','obsUrl','obsPassword','obsScene','obsExePath','autoLaunchObs','obsAutoSync'];
+const fields = ['name','mode','secret','masterIp','sendScreen','sendCamera','watchPresenter','autoStart','launchAtLogin','screenFps','screenBitrateK','cameraFps','cameraBitrateK','cameraWidth','cameraHeight','cameraDevice','screenMonitor','screenAudioEndpoint','screenAudioDevice','cameraAudioDevice','screenAudioMode','transport','srtLatencyMs','srtAdaptive','syncEnabled','encoder','ffmpegPath','ffplayPath','obsUrl','obsPassword','obsScene','obsExePath','autoLaunchObs','obsAutoSync'];
 const checks = new Set(['sendScreen','sendCamera','watchPresenter','autoStart','launchAtLogin','autoLaunchObs','obsAutoSync','srtAdaptive','syncEnabled']);
 const numeric = new Set(['screenFps','screenBitrateK','cameraFps','cameraBitrateK','cameraWidth','cameraHeight','srtLatencyMs']);
-function populateForm(cfg){for(const k of fields){const input=$('f-'+k);if(!input)continue;if(checks.has(k))input.checked=!!cfg[k];else input.value=cfg[k]??'';}settingsDirty=false;updateVisibleFields();}
+function populateForm(cfg){for(const k of fields){const input=$('f-'+k);if(!input)continue;if(checks.has(k))input.checked=!!cfg[k];else {if(['screenMonitor','screenAudioEndpoint'].includes(k))ensureDeviceOption(input,cfg[k]||'');input.value=cfg[k]??'';}}settingsDirty=false;updateVisibleFields();}
 function collectForm(){const cfg=structuredClone(current.config);for(const k of fields){const input=$('f-'+k);if(!input)continue;cfg[k]=checks.has(k)?input.checked:numeric.has(k)?Number(input.value):input.value.trim();}return cfg;}
 function updateVisibleFields(){
  const mode=$('f-mode').value;
@@ -94,6 +94,7 @@ function updateVisibleFields(){
  $('obs-settings-panel').hidden=mode!=='master';
  $('media-tools-panel').hidden=mode==='master';
  $('network-media-settings').hidden=mode!=='master';
+ $('screen-audio-wasapi').hidden=$('f-screenAudioMode').value!=='wasapi'||!screen;
  $('screen-audio-dshow').hidden=$('f-screenAudioMode').value!=='dshow'||!screen;
 }
 function updateModeFlags(mode){const defaults={master:[false,false,false],presenter:[true,false,false],camera:[false,true,false],'camera-view':[false,true,true],viewer:[false,false,true]};
@@ -154,13 +155,14 @@ function init(){for(const b of document.querySelectorAll('.nav'))b.addEventListe
  $('save-config').addEventListener('click',saveSettings);
  $('restart-app').addEventListener('click',restartApp);
  initUpdates();
- $('detect-devices').addEventListener('click',async()=>{$('device-output').textContent='Поиск устройств…';try{$('device-output').textContent=(await post('/api/devices',{})).output||'Устройства не обнаружены'}catch(e){$('device-output').textContent=e.message}});
+ $('detect-devices').addEventListener('click',loadCaptureDevices);
+ $('refresh-capture-devices').addEventListener('click',loadCaptureDevices);
  $('launch-obs').addEventListener('click',async()=>{try{await post('/api/action',{action:'open-obs'});toast('Команда запуска OBS отправлена')}catch(e){toast('OBS: '+e.message,true)}});
  $('sync-obs').addEventListener('click',async()=>{const b=$('sync-obs');b.disabled=true;try{await post('/api/action',{action:'obs-sync'});toast('Источники OBS синхронизированы.')}catch(e){toast('OBS: '+e.message,true)}finally{b.disabled=false}});
  $('copy-logs').addEventListener('click',async()=>{try{await navigator.clipboard.writeText($('logs-output').textContent);toast('Журнал скопирован')}catch(e){toast('Не удалось скопировать журнал',true)}});
  tab('overview');
  const updateClock=()=>{$('clock').textContent=new Date().toLocaleString('ru-RU',{hour:'2-digit',minute:'2-digit',day:'numeric',month:'short'})};updateClock();setInterval(updateClock,10000);
- refresh();setInterval(refresh,2500);
+ refresh().then(loadCaptureDevices);setInterval(refresh,2500);
 }
 document.addEventListener('DOMContentLoaded',init);
 
@@ -206,4 +208,31 @@ function initUpdates(){
    throw Error('Перезапуск не подтверждён. Проверьте окно обновлятора и журнал .lb-update.');
   }catch(e){toast(e.message,true)}finally{$('update-install').disabled=false}
  });
+}
+
+function ensureDeviceOption(select,value){
+ if(value && !Array.from(select.options).some(o=>o.value===value)){
+  const o=document.createElement('option');o.value=value;o.textContent='Недоступно: '+value;select.append(o);
+ }
+}
+function fillDeviceOptions(id,items,defaultLabel){
+ const input=$(id);const selected=input.value;
+ input.replaceChildren();const first=document.createElement('option');first.value='';first.textContent=defaultLabel;input.append(first);
+ for(const item of items){const o=document.createElement('option');o.value=item.id;o.textContent=item.name;input.append(o)}
+ ensureDeviceOption(input,selected);input.value=selected;
+}
+async function loadCaptureDevices(){
+ const buttons=[$('detect-devices'),$('refresh-capture-devices')];if(buttons.some(b=>b.disabled))return;
+ buttons.forEach(b=>b.disabled=true);$('capture-device-status').textContent='Поиск экранов и аудиоустройств…';
+ try{
+  const d=await post('/api/devices',{});const outputs=d.audioOutputs||[];const displays=d.displays||[];
+  const def=outputs.find(x=>x.default);
+  fillDeviceOptions('f-screenMonitor',displays,'Весь рабочий стол — все экраны');
+  fillDeviceOptions('f-screenAudioEndpoint',outputs,'Устройство Windows по умолчанию'+(def?' — '+def.name:''));
+  $('capture-dshow-audio').replaceChildren();
+  for(const match of (d.output||'').matchAll(/"([^"\n]+)" \(audio\)/g)){const o=document.createElement('option');o.value=match[1];$('capture-dshow-audio').append(o)}
+  $('device-output').textContent=d.output||'Устройства DirectShow не обнаружены';
+  $('capture-device-status').textContent=`Экранов: ${displays.length}; аудиовыходов: ${outputs.length}. `+(d.warnings||[]).join(' ');
+ }catch(e){$('capture-device-status').textContent='Не удалось обновить устройства: '+e.message;}
+ finally{buttons.forEach(b=>b.disabled=false)}
 }

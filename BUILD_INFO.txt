@@ -1,5 +1,6 @@
-Local Broadcast 0.3.7-beta.1 — 2026-11-19
-WASAPI device-clock continuity fix. Updater protocol 1; dependencies unchanged.
-Unit tests, live gdigrab/WASAPI/AAC and local SRT tests passed.
-Video latency in OBS remains unresolved. Physical two-PC acceptance pending.
-See docs/DIAGNOSTICS_2026-11-19.md.
+Local Broadcast 0.3.7-beta.2 — 2026-11-19
+Monitor and WASAPI output selection; capture EOF recovery.
+Updater protocol 1; dependencies unchanged.
+Unit, live WASAPI/AAC, injected EOF recovery, persistence and browser UI checks passed.
+OBS video latency unresolved; remote audio source acceptance pending.
+See docs/CAPTURE_SELECTION_2026-11-19.md.

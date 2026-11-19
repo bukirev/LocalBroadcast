@@ -131,13 +131,16 @@
         </article>
         <article class="panel" id="media-settings-panel"><div class="panel-title"><div><h2>Видео и звук</h2></div></div>
           <div class="field"><label for="f-encoder">Кодировщик H.264</label><select id="f-encoder"><option value="libx264">CPU — x264 (совместимый)</option><option value="h264_nvenc">NVIDIA NVENC</option><option value="h264_qsv">Intel Quick Sync</option><option value="h264_amf">AMD AMF</option></select><small>Сначала проверьте выбранный аппаратный кодировщик на вашем ПК.</small></div>
+          <div class="field screen-setting"><label for="f-screenMonitor">Какой экран передавать</label><select id="f-screenMonitor"><option value="">Весь рабочий стол — все экраны</option></select><small>Выберите один монитор или весь рабочий стол. Список относится к этому ПК.</small></div>
           <div class="inline-fields screen-setting"><div class="field"><label for="f-screenFps">Экран, FPS</label><input type="number" id="f-screenFps" min="5" max="60"></div><div class="field"><label for="f-screenBitrateK">Экран, Кбит/с</label><input type="number" id="f-screenBitrateK" min="300" max="25000"></div></div>
           <div class="inline-fields camera-setting"><div class="field"><label for="f-cameraFps">Камера, FPS</label><input type="number" id="f-cameraFps" min="5" max="60"></div><div class="field"><label for="f-cameraBitrateK">Камера, Кбит/с</label><input type="number" id="f-cameraBitrateK" min="300" max="25000"></div></div>
           <div class="inline-fields camera-setting"><div class="field"><label for="f-cameraWidth">Ширина камеры</label><input type="number" id="f-cameraWidth"></div><div class="field"><label for="f-cameraHeight">Высота камеры</label><input type="number" id="f-cameraHeight"></div></div>
           <div class="field camera-setting"><label for="f-cameraDevice">Имя камеры DirectShow</label><input id="f-cameraDevice" placeholder="USB Camera"></div>
-          <div class="field screen-setting"><label for="f-screenAudioMode">Системный звук Windows</label><select id="f-screenAudioMode"><option value="wasapi">WASAPI — нативный захват основного аудиовыхода</option><option value="dshow">DirectShow — Stereo Mix/другое устройство</option><option value="off">Не передавать звук</option></select><small>WASAPI использует общий аудиомикс основного устройства вывода и не требует виртуального кабеля.</small></div>
-          <div class="field screen-setting" id="screen-audio-dshow"><label for="f-screenAudioDevice">Звук экрана (Stereo Mix / loopback)</label><input id="f-screenAudioDevice" placeholder="Оставьте пустым, чтобы не передавать звук"></div>
-          <div class="field camera-setting"><label for="f-cameraAudioDevice">Микрофон камеры</label><input id="f-cameraAudioDevice" placeholder="Оставьте пустым, если не нужен"></div>
+          <div class="field screen-setting"><label for="f-screenAudioMode">Системный звук Windows</label><select id="f-screenAudioMode"><option value="wasapi">WASAPI — звук колонок / наушников</option><option value="dshow">DirectShow — микрофон / Stereo Mix</option><option value="off">Не передавать звук</option></select><small>Для звука приложения выберите ниже то устройство, через которое вы слышите его на этом ПК.</small></div>
+          <div class="field screen-setting" id="screen-audio-wasapi"><label for="f-screenAudioEndpoint">Источник системного звука</label><select id="f-screenAudioEndpoint"><option value="">Устройство Windows по умолчанию</option></select><small>HDMI-монитор, Bluetooth-наушники и колонки — разные источники. Если звука нет, выберите нужный явно.</small></div>
+          <div class="field screen-setting"><button type="button" class="button secondary" id="refresh-capture-devices">Обновить экраны и источники звука</button><small id="capture-device-status" role="status"></small></div>
+          <div class="field screen-setting" id="screen-audio-dshow"><label for="f-screenAudioDevice">Звук экрана (Stereo Mix / loopback)</label><input id="f-screenAudioDevice" list="capture-dshow-audio" placeholder="Оставьте пустым, чтобы не передавать звук"></div>
+          <div class="field camera-setting"><label for="f-cameraAudioDevice">Микрофон камеры</label><input id="f-cameraAudioDevice" list="capture-dshow-audio" placeholder="Оставьте пустым, если не нужен"></div>
         </article>
       </div>
       <div class="columns">
@@ -200,5 +203,6 @@
     </section>
   </main>
 </div>
+<datalist id="capture-dshow-audio"></datalist>
 </body>
 </html>

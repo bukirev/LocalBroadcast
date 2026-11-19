@@ -134,5 +134,5 @@ func (s *pcmTimeline) Close() error {
 func (s *pcmTimeline) Snapshot() map[string]any {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return map[string]any{"clockFrames": s.next, "missingFrames": s.missing, "lateFrames": s.late, "skippedFrames": s.skipped, "sampleRate": s.rate, "holdMs": 40, "clockRateHz": s.captureClock.rate, "clockReanchors": s.captureClock.reanchors, "deviceDiscontinuities": s.captureClock.discontinuities, "timestampErrors": s.captureClock.timestampErrors}
+	return map[string]any{"closed": s.closed, "clockFrames": s.next, "missingFrames": s.missing, "lateFrames": s.late, "skippedFrames": s.skipped, "sampleRate": s.rate, "holdMs": 40, "clockRateHz": s.captureClock.rate, "clockReanchors": s.captureClock.reanchors, "deviceDiscontinuities": s.captureClock.discontinuities, "timestampErrors": s.captureClock.timestampErrors}
 }

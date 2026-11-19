@@ -95,6 +95,14 @@ type audioCaptureProbe struct {
 }
 
 func openNativeLoopback(ctx context.Context, logs *LogBuffer, probes ...func(audioCaptureProbe)) (io.ReadCloser, AudioFormat, error) {
+	return openNativeLoopbackSelected(ctx, logs, "", probes...)
+}
+
+func openNativeLoopbackDevice(ctx context.Context, logs *LogBuffer, deviceID string) (io.ReadCloser, AudioFormat, error) {
+	return openNativeLoopbackSelected(ctx, logs, deviceID)
+}
+
+func openNativeLoopbackSelected(ctx context.Context, logs *LogBuffer, deviceID string, probes ...func(audioCaptureProbe)) (io.ReadCloser, AudioFormat, error) {
 	captureCtx, cancel := context.WithCancel(ctx)
 	deferOnError := true
 	defer func() {
@@ -133,10 +141,23 @@ func openNativeLoopback(ctx context.Context, logs *LogBuffer, probes ...func(aud
 			ready <- result{err: fmt.Errorf("MMDeviceEnumerator: 0x%08x", uint32(r))}
 			return
 		}
-		if err := callCOM(enumerator, 4, 0, 0, uintptr(unsafe.Pointer(&device))); err != nil {
-			ready <- result{err: err}
+		var deviceErr error
+		if deviceID == "" {
+			deviceErr = callCOM(enumerator, 4, 0, 0, uintptr(unsafe.Pointer(&device)))
+		} else {
+			id, err := syscall.UTF16PtrFromString(deviceID)
+			if err != nil {
+				ready <- result{err: err}
+				return
+			}
+			deviceErr = callCOM(enumerator, 5, uintptr(unsafe.Pointer(id)), uintptr(unsafe.Pointer(&device)))
+			runtime.KeepAlive(id)
+		}
+		if deviceErr != nil {
+			ready <- result{err: deviceErr}
 			return
 		}
+
 		if err := callCOM(device, 3, uintptr(unsafe.Pointer(&iidAudioClient)), 23, 0, uintptr(unsafe.Pointer(&client))); err != nil {
 			ready <- result{err: err}
 			return
@@ -175,14 +196,29 @@ func openNativeLoopback(ctx context.Context, logs *LogBuffer, probes ...func(aud
 			return
 		}
 		defer callCOM(client, 11)
+		logs.Add(fmt.Sprintf("WASAPI: захват %s · %d Гц · %d каналов", captureDeviceName(device), f.Rate, f.Channels))
 		ready <- result{f: f, stream: stream}
 		ticker := time.NewTicker(5 * time.Millisecond)
 		defer ticker.Stop()
+		initialDeviceID, _ := captureDeviceID(device)
+		nextDeviceCheck := time.Now().Add(time.Second)
 		for {
 			select {
 			case <-captureCtx.Done():
 				return
 			case <-ticker.C:
+			}
+			if deviceID == "" && time.Now().After(nextDeviceCheck) {
+				nextDeviceCheck = time.Now().Add(time.Second)
+				var current uintptr
+				if err := callCOM(enumerator, 4, 0, 0, uintptr(unsafe.Pointer(&current))); err == nil {
+					id, idErr := captureDeviceID(current)
+					releaseCOM(current)
+					if idErr == nil && initialDeviceID != "" && id != initialDeviceID {
+						logs.Add("WASAPI: устройство Windows по умолчанию изменилось; переключаем захват")
+						return
+					}
+				}
 			}
 			for {
 				var size uint32

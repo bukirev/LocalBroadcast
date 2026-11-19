@@ -235,7 +235,7 @@ func (m *MediaManager) syncReceiversLocked(ports []int, c Configuration) {
 func pipelineSignature(kind string, c Configuration) string {
 	var selected any
 	if kind == "screen" {
-		selected = []any{c.FFmpegPath, c.ScreenFPS, c.ScreenBitrateK, c.ScreenAudioMode, c.ScreenAudioDevice, c.Encoder}
+		selected = []any{c.FFmpegPath, c.ScreenFPS, c.ScreenBitrateK, c.ScreenAudioMode, c.ScreenAudioDevice, c.ScreenAudioEndpoint, c.ScreenMonitor, c.Encoder}
 	}
 	if kind == "camera" {
 		selected = []any{c.FFmpegPath, c.CameraFPS, c.CameraBitrateK, c.CameraWidth, c.CameraHeight, c.CameraDevice, c.CameraAudioDevice, c.Encoder}
@@ -284,7 +284,19 @@ func ffmpegArgsPCM(kind string, c Configuration, localPort int, pcm *AudioFormat
 	args := []string{"-hide_banner", "-loglevel", "warning", "-nostdin", "-fflags", "+genpts"}
 	var audioDevice string
 	if kind == "screen" {
-		args = append(args, "-f", "gdigrab", "-framerate", strconv.Itoa(c.ScreenFPS), "-draw_mouse", "1", "-i", "desktop")
+		args = append(args, "-f", "gdigrab", "-framerate", strconv.Itoa(c.ScreenFPS), "-draw_mouse", "1")
+		if c.ScreenMonitor != "" {
+			displays, err := captureDisplays()
+			if err != nil {
+				return nil, err
+			}
+			region, err := captureRegionArgs(c.ScreenMonitor, displays)
+			if err != nil {
+				return nil, err
+			}
+			args = append(args, region...)
+		}
+		args = append(args, "-i", "desktop")
 		audioDevice = c.ScreenAudioDevice
 		if c.ScreenAudioMode == "off" {
 			audioDevice = ""
@@ -449,10 +461,11 @@ func (p *Pipeline) captureLoop(ctx context.Context, binary string, args []string
 		loopArgs := args
 		var pcmReader io.ReadCloser
 		var audioCancel context.CancelFunc
+		var audioDone <-chan struct{}
 		if p.kind == "screen" && c.ScreenAudioMode == "wasapi" {
 			audioCtx, cancel := context.WithCancel(ctx)
 			audioCancel = cancel
-			r, spec, err := openSystemLoopback(audioCtx, p.logs)
+			r, spec, err := openSystemLoopback(audioCtx, p.logs, c.ScreenAudioEndpoint)
 			if err != nil {
 				p.logs.Add("WASAPI: " + err.Error())
 				cancel()
@@ -466,6 +479,9 @@ func (p *Pipeline) captureLoop(ctx context.Context, binary string, args []string
 			pcmReader = r
 			p.mu.Lock()
 			p.audio, _ = r.(*pcmTimeline)
+			if p.audio != nil {
+				audioDone = p.audio.done
+			}
 			p.mu.Unlock()
 			loopArgs, err = ffmpegArgsPCM(p.kind, c, port, &spec)
 			if err != nil {
@@ -499,6 +515,14 @@ func (p *Pipeline) captureLoop(ctx context.Context, binary string, args []string
 				if cmd.Process != nil {
 					_ = cmd.Process.Kill()
 				}
+				<-done
+			case <-audioDone:
+				// FFmpeg keeps encoding video after PCM EOF. Reopen WASAPI and
+				// restart the encoder instead of silently sending video forever.
+				if ctx.Err() == nil {
+					p.logs.Add("WASAPI: захват звука завершён; перезапускаем захват и передачу")
+				}
+				_ = cmd.Process.Kill()
 				<-done
 			case err := <-done:
 				if ctx.Err() == nil {

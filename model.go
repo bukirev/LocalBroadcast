@@ -21,47 +21,49 @@ const (
 	cameraPortStart = 5101
 )
 
-var appVersion = "0.3.7-beta.1"
+var appVersion = "0.3.7-beta.2"
 var uiPort = 39888
 
 type Configuration struct {
-	Schema            int                        `json:"schema"`
-	NodeID            string                     `json:"nodeId"`
-	Name              string                     `json:"name"`
-	Mode              string                     `json:"mode"` // master, presenter, camera, camera-view, viewer, custom
-	Secret            string                     `json:"secret"`
-	MasterIP          string                     `json:"masterIp"` // optional fallback to discovery
-	AutoStart         bool                       `json:"autoStart"`
-	LaunchAtLogin     bool                       `json:"launchAtLogin"`
-	SendScreen        bool                       `json:"sendScreen"`
-	SendCamera        bool                       `json:"sendCamera"`
-	WatchPresenter    bool                       `json:"watchPresenter"`
-	ScreenFPS         int                        `json:"screenFps"`
-	ScreenBitrateK    int                        `json:"screenBitrateK"`
-	CameraFPS         int                        `json:"cameraFps"`
-	CameraBitrateK    int                        `json:"cameraBitrateK"`
-	CameraWidth       int                        `json:"cameraWidth"`
-	CameraHeight      int                        `json:"cameraHeight"`
-	CameraDevice      string                     `json:"cameraDevice"`
-	ScreenAudioDevice string                     `json:"screenAudioDevice"` // optional legacy DirectShow device
-	ScreenAudioMode   string                     `json:"screenAudioMode"`   // wasapi, dshow, off
-	CameraAudioDevice string                     `json:"cameraAudioDevice"`
-	Transport         string                     `json:"transport"` // udp or srt
-	SRTLatencyMS      int                        `json:"srtLatencyMs"`
-	SRTAdaptive       bool                       `json:"srtAdaptive"`
-	SyncEnabled       bool                       `json:"syncEnabled"`
-	SyncOffsets       map[string]SyncTuning      `json:"syncOffsets,omitempty"`
-	Encoder           string                     `json:"encoder"` // libx264, h264_nvenc, h264_qsv, h264_amf
-	FFmpegPath        string                     `json:"ffmpegPath"`
-	FFplayPath        string                     `json:"ffplayPath"`
-	ObsPassword       string                     `json:"obsPassword"`
-	AutoLaunchOBS     bool                       `json:"autoLaunchObs"`
-	ObsExePath        string                     `json:"obsExePath"`
-	ObsURL            string                     `json:"obsUrl"`
-	ObsScene          string                     `json:"obsScene"`
-	ObsAutoSync       bool                       `json:"obsAutoSync"`
-	Routing           map[string]map[string]bool `json:"routing,omitempty"`     // sourceID -> targetID -> enabled
-	CameraPorts       map[string]int             `json:"cameraPorts,omitempty"` // stable mapping of nodeID -> OBS port
+	Schema              int                        `json:"schema"`
+	NodeID              string                     `json:"nodeId"`
+	Name                string                     `json:"name"`
+	Mode                string                     `json:"mode"` // master, presenter, camera, camera-view, viewer, custom
+	Secret              string                     `json:"secret"`
+	MasterIP            string                     `json:"masterIp"` // optional fallback to discovery
+	AutoStart           bool                       `json:"autoStart"`
+	LaunchAtLogin       bool                       `json:"launchAtLogin"`
+	SendScreen          bool                       `json:"sendScreen"`
+	SendCamera          bool                       `json:"sendCamera"`
+	WatchPresenter      bool                       `json:"watchPresenter"`
+	ScreenMonitor       string                     `json:"screenMonitor"`
+	ScreenAudioEndpoint string                     `json:"screenAudioEndpoint"`
+	ScreenFPS           int                        `json:"screenFps"`
+	ScreenBitrateK      int                        `json:"screenBitrateK"`
+	CameraFPS           int                        `json:"cameraFps"`
+	CameraBitrateK      int                        `json:"cameraBitrateK"`
+	CameraWidth         int                        `json:"cameraWidth"`
+	CameraHeight        int                        `json:"cameraHeight"`
+	CameraDevice        string                     `json:"cameraDevice"`
+	ScreenAudioDevice   string                     `json:"screenAudioDevice"` // optional legacy DirectShow device
+	ScreenAudioMode     string                     `json:"screenAudioMode"`   // wasapi, dshow, off
+	CameraAudioDevice   string                     `json:"cameraAudioDevice"`
+	Transport           string                     `json:"transport"` // udp or srt
+	SRTLatencyMS        int                        `json:"srtLatencyMs"`
+	SRTAdaptive         bool                       `json:"srtAdaptive"`
+	SyncEnabled         bool                       `json:"syncEnabled"`
+	SyncOffsets         map[string]SyncTuning      `json:"syncOffsets,omitempty"`
+	Encoder             string                     `json:"encoder"` // libx264, h264_nvenc, h264_qsv, h264_amf
+	FFmpegPath          string                     `json:"ffmpegPath"`
+	FFplayPath          string                     `json:"ffplayPath"`
+	ObsPassword         string                     `json:"obsPassword"`
+	AutoLaunchOBS       bool                       `json:"autoLaunchObs"`
+	ObsExePath          string                     `json:"obsExePath"`
+	ObsURL              string                     `json:"obsUrl"`
+	ObsScene            string                     `json:"obsScene"`
+	ObsAutoSync         bool                       `json:"obsAutoSync"`
+	Routing             map[string]map[string]bool `json:"routing,omitempty"`     // sourceID -> targetID -> enabled
+	CameraPorts         map[string]int             `json:"cameraPorts,omitempty"` // stable mapping of nodeID -> OBS port
 }
 
 // Offsets can be calibrated with a visible flash and clap on each camera.
@@ -140,6 +142,9 @@ func validateConfig(c *Configuration) error {
 	case "libx264", "h264_nvenc", "h264_qsv", "h264_amf":
 	default:
 		return errors.New("неподдерживаемый кодировщик")
+	}
+	if len(c.ScreenMonitor) > 128 || len(c.ScreenAudioEndpoint) > 1024 || strings.ContainsRune(c.ScreenMonitor, 0) || strings.ContainsRune(c.ScreenAudioEndpoint, 0) {
+		return errors.New("некорректный идентификатор устройства захвата")
 	}
 	switch c.ScreenAudioMode {
 	case "wasapi", "dshow", "off":
