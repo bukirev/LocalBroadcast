@@ -378,7 +378,9 @@ func syncOBS(ctx context.Context, c Configuration, peers []Peer) error {
 	}
 	for _, source := range desiredOBSSources(peers) {
 		// OBS's Media Source uses 'ffmpeg_source' and treats input as an URL.
-		settings := map[string]any{"is_local_file": false, "input": fmt.Sprintf("udp://@:%d?fifo_size=100000&overrun_nonfatal=1", source.port),
+		// An empty host (@) may bind IPv6-only on Windows. All LAN plans and
+		// local SRT relays send IPv4, so use an explicit IPv4 wildcard listener.
+		settings := map[string]any{"is_local_file": false, "input": fmt.Sprintf("udp://0.0.0.0:%d?fifo_size=100000&overrun_nonfatal=1", source.port),
 			"input_format": "mpegts", "buffering_mb": 0, "reconnect_delay_sec": 1}
 		if !existing[source.name] {
 			_, err = client.request("CreateInput", map[string]any{"sceneName": c.ObsScene, "inputName": source.name,

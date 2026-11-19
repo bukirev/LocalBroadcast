@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	appVersion      = "0.3.3-beta"
+	appVersion      = "0.3.4-beta"
 	discoveryPort   = 39721
 	coordinatorPort = 39780
 	uiPort          = 39888

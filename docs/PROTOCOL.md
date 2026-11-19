@@ -16,7 +16,7 @@
 | Камера 1 | 5101 | 11101 |
 | Камера N | 5100+N | 11100+N |
 
-SRT stream on wire — MPEG-TS with encoded H.264/AAC. FFmpeg `libsrt`, `mode=caller/listener`, `latency` in microseconds, `passphrase`, `pbkeylen=16`. FFmpeg remux SRT listener -> UDP localhost target. OBS Media Source remains `udp://@:port` for both modes.
+SRT stream on wire — MPEG-TS with encoded H.264/AAC. FFmpeg `libsrt`, `mode=caller/listener`, `latency` in microseconds, `passphrase`, `pbkeylen=16`. FFmpeg remux SRT listener -> UDP localhost target. OBS Media Source remains `udp://0.0.0.0:port` for both modes.
 
 ## Local UI/API
 

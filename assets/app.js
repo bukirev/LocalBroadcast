@@ -76,7 +76,7 @@ function renderSync(adjustments){
  }
 }
 function renderOBS(peers){const root=$('obs-camera-ports');clear(root);
- for(const p of peers||[]){if(!p.sendCamera)continue;const n=el('div','kv');n.append(el('span','',p.name),el('code','',`udp://@:${p.cameraPort}`));root.append(n)}
+ for(const p of peers||[]){if(!p.sendCamera)continue;const n=el('div','kv');n.append(el('span','',p.name),el('code','',`udp://0.0.0.0:${p.cameraPort}`));root.append(n)}
 }
 const fields = ['name','mode','secret','masterIp','sendScreen','sendCamera','watchPresenter','autoStart','launchAtLogin','screenFps','screenBitrateK','cameraFps','cameraBitrateK','cameraWidth','cameraHeight','cameraDevice','screenAudioDevice','cameraAudioDevice','screenAudioMode','transport','srtLatencyMs','srtAdaptive','syncEnabled','encoder','ffmpegPath','ffplayPath','obsUrl','obsPassword','obsScene','obsExePath','autoLaunchObs','obsAutoSync'];
 const checks = new Set(['sendScreen','sendCamera','watchPresenter','autoStart','launchAtLogin','autoLaunchObs','obsAutoSync','srtAdaptive','syncEnabled']);

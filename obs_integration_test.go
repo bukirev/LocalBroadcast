@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"net/url"
 	"sync"
 	"testing"
 	"time"
@@ -126,6 +127,16 @@ func TestOBSWireProtocolCreateSources(t *testing.T) {
 				mu.Unlock()
 			case "CreateInput":
 				name, _ := r.RequestData["inputName"].(string)
+				settings, _ := r.RequestData["inputSettings"].(map[string]any)
+				input, _ := settings["input"].(string)
+				endpoint, parseErr := url.Parse(input)
+				port := 5101
+				if name == "LB | Presenter" {
+					port = 5000
+				}
+				if parseErr != nil || endpoint.Scheme != "udp" || endpoint.Host != fmt.Sprintf("0.0.0.0:%d", port) {
+					t.Errorf("OBS must listen on explicit IPv4 to receive LAN and loopback streams: %q", input)
+				}
 				mu.Lock()
 				created[name] = true
 				mu.Unlock()

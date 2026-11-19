@@ -26,6 +26,16 @@ try {
         try { Invoke-RestMethod 'http://127.0.0.1:39888/api/action' -Method Post -ContentType 'application/json' -Headers @{'X-LB-UI'='1'} -Body '{"action":"shutdown"}' -TimeoutSec 2 | Out-Null } catch { }
         foreach ($process in $running) {
             if (!$process.WaitForExit(2000)) { Stop-Process -Id $process.Id -ErrorAction Stop }
+            # Versions before 0.3.4 could exit before media children were reaped.
+            # Only media processes belonging to this stopped app are cleaned up.
+            $children = @(Get-CimInstance Win32_Process -Filter ('ParentProcessId = ' + $process.Id) -ErrorAction SilentlyContinue | Where-Object { $_.Name -in @('ffmpeg.exe','ffplay.exe') })
+            foreach ($child in $children) {
+                $mediaProcess = Get-Process -Id $child.ProcessId -ErrorAction SilentlyContinue
+                if ($mediaProcess -and $mediaProcess.SessionId -eq $session) {
+                    Stop-Process -Id $mediaProcess.Id -ErrorAction Stop
+                    if (!$mediaProcess.WaitForExit(5000)) { throw 'Не удалось закрыть старый медиапроцесс. Повторите установку после его завершения.' }
+                }
+            }
         }
     }
     if ($options.Mode -eq 'master') { Wait-SetupClosed 'obs64' 'OBS Studio' }

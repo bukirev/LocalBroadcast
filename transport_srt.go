@@ -25,6 +25,7 @@ func srtURL(ip string, port, latencyMS int, secret, mode string) string {
 
 type transportWorker struct {
 	cancel           context.CancelFunc
+	done             chan struct{}
 	latencyBase      int
 	ffmpeg           string
 	secret           string
@@ -33,11 +34,19 @@ type transportWorker struct {
 	effectiveLatency atomic.Int64
 }
 
-func (w *transportWorker) stop() { w.cancel() }
+func (w *transportWorker) stop() {
+	w.cancel()
+	if w.done != nil {
+		<-w.done
+	}
+}
 
 // transportWorker has its own lifecycle, so read and write media do not block
 // the HTTP coordinator's heartbeat loop.
 func runSRTProcess(ctx context.Context, w *transportWorker, logs *LogBuffer, label string, args func(int) []string) {
+	if w.done != nil {
+		defer close(w.done)
+	}
 	latency := w.latencyBase
 	retry := time.Second
 	attempts := 0
@@ -45,6 +54,7 @@ func runSRTProcess(ctx context.Context, w *transportWorker, logs *LogBuffer, lab
 		began := time.Now()
 		w.effectiveLatency.Store(int64(latency))
 		cmd := exec.CommandContext(ctx, binaryPath(w.ffmpeg), args(latency)...)
+		cmd.WaitDelay = 2 * time.Second
 		prepareHeadlessCommand(cmd)
 		cmd.Stderr = &lineWriter{logs: logs, prefix: "SRT/" + label}
 		err := cmd.Run()
@@ -84,7 +94,7 @@ func runSRTProcess(ctx context.Context, w *transportWorker, logs *LogBuffer, lab
 // payload to local UDP where OBS or the previewer is already listening.
 func startSRTReceiver(localPort int, c Configuration, logs *LogBuffer) *transportWorker {
 	ctx, cancel := context.WithCancel(context.Background())
-	w := &transportWorker{cancel: cancel, latencyBase: c.SRTLatencyMS, ffmpeg: c.FFmpegPath, secret: c.Secret, adaptive: c.SRTAdaptive}
+	w := &transportWorker{cancel: cancel, done: make(chan struct{}), latencyBase: c.SRTLatencyMS, ffmpeg: c.FFmpegPath, secret: c.Secret, adaptive: c.SRTAdaptive}
 	go runSRTProcess(ctx, w, logs, "приём:"+strconv.Itoa(localPort), func(latency int) []string {
 		return []string{"-hide_banner", "-loglevel", "warning", "-nostdin", "-fflags", "+genpts", "-analyzeduration", "0", "-probesize", "32768",
 			"-f", "mpegts", "-i", srtURL("0.0.0.0", srtPort(localPort), latency, c.Secret, "listener"),
@@ -106,14 +116,14 @@ func freeUDPLocalPort() (int, error) {
 }
 func startSRTSender(localPort int, dst *net.UDPAddr, c Configuration, logs *LogBuffer) context.CancelFunc {
 	ctx, cancel := context.WithCancel(context.Background())
-	w := &transportWorker{cancel: cancel, latencyBase: c.SRTLatencyMS, ffmpeg: c.FFmpegPath, secret: c.Secret, adaptive: false}
+	w := &transportWorker{cancel: cancel, done: make(chan struct{}), latencyBase: c.SRTLatencyMS, ffmpeg: c.FFmpegPath, secret: c.Secret, adaptive: false}
 	go runSRTProcess(ctx, w, logs, "отправка:"+dst.String(), func(latency int) []string {
 		return []string{"-hide_banner", "-loglevel", "warning", "-nostdin", "-fflags", "+genpts", "-analyzeduration", "0", "-probesize", "32768",
 			"-f", "mpegts", "-i", fmt.Sprintf("udp://127.0.0.1:%d?fifo_size=25000&overrun_nonfatal=1", localPort),
 			"-map", "0", "-c", "copy", "-muxdelay", "0", "-muxpreload", "0", "-f", "mpegts",
 			srtURL(dst.IP.String(), srtPort(dst.Port), latency, c.Secret, "caller")}
 	})
-	return cancel
+	return w.stop
 }
 
 // SetTransport changes only relay destinations; it never restarts screen or

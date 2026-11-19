@@ -19,6 +19,8 @@ import (
 
 type MediaManager struct {
 	mu           sync.Mutex
+	closed       bool
+	viewerLoops  []chan struct{}
 	pipelines    map[string]*Pipeline
 	viewer       *exec.Cmd
 	viewerCancel context.CancelFunc
@@ -62,6 +64,9 @@ func (m *MediaManager) Snapshot() map[string]any {
 func (m *MediaManager) Apply(p Plan, c Configuration) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.closed {
+		return
+	}
 	m.lastPlan = p
 	// The coordinator owns the transport mode; all members must use the same one.
 	if p.Transport == "srt" || p.Transport == "udp" {
@@ -118,14 +123,14 @@ func (m *MediaManager) applyViewer(needed bool, c Configuration) {
 		m.viewerWanted = true
 		ctx, cancel := context.WithCancel(context.Background())
 		m.viewerCancel = cancel
-		go m.previewLoop(ctx, c)
+		done := make(chan struct{})
+		m.viewerLoops = append(m.viewerLoops, done)
+		go func() { defer close(done); m.previewLoop(ctx, c) }()
 	} else if !needed && m.viewerWanted {
 		m.viewerWanted = false
 		m.viewerCancel()
 		m.viewerCancel = nil
-		if m.viewer != nil && m.viewer.Process != nil {
-			_ = m.viewer.Process.Kill()
-		}
+		// CommandContext handles both cancellation before Start and a live child.
 		m.viewer = nil
 		m.logs.Add("Просмотр презентера остановлен")
 	}
@@ -134,8 +139,9 @@ func (m *MediaManager) previewLoop(ctx context.Context, c Configuration) {
 	for ctx.Err() == nil {
 		args := []string{"-hide_banner", "-loglevel", "warning", "-fflags", "nobuffer", "-flags", "low_delay", "-framedrop",
 			"-analyzeduration", "0", "-probesize", "32768", "-window_title", "Local Broadcast - Presenter",
-			"-f", "mpegts", "-i", fmt.Sprintf("udp://@:%d?fifo_size=100000&overrun_nonfatal=1", presenterPort)}
-		cmd := exec.Command(binaryPath(c.FFplayPath), args...)
+			"-f", "mpegts", "-i", fmt.Sprintf("udp://0.0.0.0:%d?fifo_size=100000&overrun_nonfatal=1", presenterPort)}
+		cmd := exec.CommandContext(ctx, binaryPath(c.FFplayPath), args...)
+		cmd.WaitDelay = 2 * time.Second
 		m.mu.Lock()
 		if ctx.Err() != nil {
 			m.mu.Unlock()
@@ -162,10 +168,24 @@ func (m *MediaManager) previewLoop(ctx context.Context, c Configuration) {
 	}
 }
 func (m *MediaManager) Close() {
-	m.Apply(Plan{}, Configuration{})
 	m.mu.Lock()
-	defer m.mu.Unlock()
+	if m.closed {
+		m.mu.Unlock()
+		return
+	}
+	m.closed = true
+	for kind, pipeline := range m.pipelines {
+		pipeline.Stop()
+		delete(m.pipelines, kind)
+	}
+	m.applyViewer(false, Configuration{})
 	m.syncReceiversLocked(nil, Configuration{})
+	viewers := append([]chan struct{}(nil), m.viewerLoops...)
+	m.mu.Unlock()
+	// Viewer cleanup takes m.mu; join after releasing it.
+	for _, done := range viewers {
+		<-done
+	}
 }
 
 // OBS master listens to all remote SRT inputs and remuxes them to the same
@@ -173,6 +193,9 @@ func (m *MediaManager) Close() {
 func (m *MediaManager) SyncMasterReceivers(peers []Peer, c Configuration) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.closed {
+		return
+	}
 	ports := []int{}
 	if c.Transport == "srt" {
 		gotPresenter := false
@@ -317,6 +340,7 @@ type Pipeline struct {
 	targets          []*net.UDPAddr
 	running          bool
 	cancel           context.CancelFunc
+	captureDone      chan struct{}
 	incoming         *net.UDPConn
 	outgoing         *net.UDPConn
 	logs             *LogBuffer
@@ -341,7 +365,7 @@ func startPipeline(kind string, port int, c Configuration, logs *LogBuffer) (*Pi
 		return nil, err
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	p := &Pipeline{kind: kind, cancel: cancel, incoming: input, outgoing: output, logs: logs, relayCancel: map[string]context.CancelFunc{}, relayPorts: map[string]int{}}
+	p := &Pipeline{kind: kind, cancel: cancel, captureDone: make(chan struct{}), incoming: input, outgoing: output, logs: logs, relayCancel: map[string]context.CancelFunc{}, relayPorts: map[string]int{}}
 	go p.forwardLoop(ctx)
 	go p.captureLoop(ctx, binaryPath(c.FFmpegPath), args, c, port)
 	return p, nil
@@ -369,13 +393,20 @@ func (p *Pipeline) Running() bool    { p.mu.RLock(); defer p.mu.RUnlock(); retur
 func (p *Pipeline) Stop() {
 	p.cancel()
 	p.mu.Lock()
+	var relays []context.CancelFunc
 	for _, cancel := range p.relayCancel {
-		cancel()
+		relays = append(relays, cancel)
 	}
 	p.relayCancel = map[string]context.CancelFunc{}
 	p.mu.Unlock()
+	for _, cancel := range relays {
+		cancel()
+	}
 	_ = p.incoming.Close()
 	_ = p.outgoing.Close()
+	if p.captureDone != nil {
+		<-p.captureDone
+	}
 }
 func (p *Pipeline) forwardLoop(ctx context.Context) {
 	packet := make([]byte, 2048)
@@ -399,6 +430,9 @@ func (p *Pipeline) forwardLoop(ctx context.Context) {
 	}
 }
 func (p *Pipeline) captureLoop(ctx context.Context, binary string, args []string, c Configuration, port int) {
+	if p.captureDone != nil {
+		defer close(p.captureDone)
+	}
 	retry := time.Second
 	for ctx.Err() == nil {
 		loopArgs := args
@@ -428,6 +462,7 @@ func (p *Pipeline) captureLoop(ctx context.Context, binary string, args []string
 			}
 		}
 		cmd := exec.Command(binary, loopArgs...)
+		cmd.WaitDelay = 2 * time.Second
 		if pcmReader != nil {
 			cmd.Stdin = pcmReader
 		}

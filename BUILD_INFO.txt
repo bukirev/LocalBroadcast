@@ -1,4 +1,5 @@
-Local Broadcast 0.3.3-beta — 2026-11-19
-Go 1.27.4 windows/amd64. Installer download progress, mirror fallback, timeouts and offline cache support.
-Offline packages are prepared locally from original upstream distributions.
-Clean-machine installation and physical media hardware require acceptance testing.
+Local Broadcast 0.3.4-beta — 2026-11-19
+Go 1.27.4 windows/amd64. Explicit IPv4 OBS media receivers.
+Real presenter screen received at 1920x1080 over SRT on Windows LAN.
+OBS WebSocket receiver-address regression test passed.
+Offline package includes original upstream dependencies.
