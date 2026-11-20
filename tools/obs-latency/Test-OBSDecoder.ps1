@@ -1,7 +1,8 @@
 param(
-    [ValidateSet('Inspect','InspectAudio','RestartInput','ReopenInput','HardwareOn','Restore')][string]$Mode = 'Inspect',
+    [ValidateSet('Inspect','InspectAudio','WatchAudio','RestartInput','ReopenInput','HardwareOn','Restore')][string]$Mode = 'Inspect',
     [ValidateRange(1024,65535)][int]$ApiPort = 39888,
     [string]$InputName = 'LB | Presenter',
+    [ValidateRange(2,1800)][int]$Seconds = 120,
     [string]$BackupPath = ''
 )
 $ErrorActionPreference = 'Stop'
@@ -59,7 +60,7 @@ try {
     try { [void](Wait-OBSTask ($socket.ConnectAsync($obsUri,$timeout.Token))) } finally { $timeout.Dispose() }
     $hello = Receive-OBS
     if ($hello.op -ne 0) { throw 'Unexpected OBS hello.' }
-    $identify = @{rpcVersion=1;eventSubscriptions=$(if ($Mode -eq 'InspectAudio') {65536} else {0})}
+    $identify = @{rpcVersion=1;eventSubscriptions=$(if ($Mode -in @('InspectAudio','WatchAudio')) {65536} else {0})}
     if ($hello.d.authentication) {
         $secret = Get-OBSHash ($state.config.obsPassword + $hello.d.authentication.salt)
         $identify.authentication = Get-OBSHash ($secret + $hello.d.authentication.challenge)
@@ -118,6 +119,48 @@ try {
     try { $cpu = @(Get-CimInstance Win32_Processor | Select-Object Name,NumberOfLogicalProcessors) } catch {}
     $stats = Invoke-OBS 'GetStats'
     $report = [ordered]@{mode=$Mode;appVersion=$state.version;obsVersion=$version.obsVersion;cpu=$cpu;srtHealth=$state.media.srtHealth;hardwareDecode=$currentHardware;bufferingMB=$source.inputSettings.buffering_mb;activeFPS=$stats.activeFps;renderSkippedFrames=$stats.renderSkippedFrames;renderTotalFrames=$stats.renderTotalFrames;backupPath=$(if ($Mode -eq 'HardwareOn') {$BackupPath} else {$null})}
+    if ($Mode -eq 'WatchAudio') {
+        if ($state.config.mode -ne 'master') { throw 'Run WatchAudio on the main PC.' }
+        $intervals = New-Object 'System.Collections.Generic.List[object]'
+        $started = [DateTimeOffset]::Now
+        $timer = [Diagnostics.Stopwatch]::StartNew()
+        function Add-Interval($Kind, $From, $Until) {
+            $intervals.Add([ordered]@{kind=$Kind; time=$started.AddMilliseconds($From).ToString('HH:mm:ss.fff'); offsetMs=$From; durationMs=($Until-$From)})
+        }
+        $last = 0L
+        $quietFrom = $null
+        $samples = 0
+        $audible = 0
+        $errorText = $null
+        while ($timer.Elapsed.TotalSeconds -lt $Seconds) {
+            try { $event = Receive-OBS } catch { $errorText = $_.Exception.Message; break }
+            if ($event.op -ne 5 -or $event.d.eventType -ne 'InputVolumeMeters') { continue }
+            foreach ($meter in $event.d.eventData.inputs) {
+                if ($meter.inputUuid -cne $identity[0].inputUuid -and $meter.inputName -cne $InputName) { continue }
+                $levels = @($meter.inputLevelsMul | Where-Object { $_.Count -ge 2 } | ForEach-Object { [double]$_[1] })
+                if (!$levels.Count) { continue }
+                $now = $timer.ElapsedMilliseconds
+                if ($now-$last -ge 250) {
+                    if ($null -ne $quietFrom -and $last-$quietFrom -ge 100) { Add-Interval 'lowLevel' $quietFrom $last }
+                    $quietFrom = $null
+                    Add-Interval 'meterGap' $last $now
+                }
+                $last = $now
+                $samples++
+                if (($levels | Measure-Object -Maximum).Maximum -lt 0.001) {
+                    if ($null -eq $quietFrom) { $quietFrom = $now }
+                } else {
+                    $audible++
+                    if ($null -ne $quietFrom -and $now-$quietFrom -ge 100) { Add-Interval 'lowLevel' $quietFrom $now }
+                    $quietFrom = $null
+                }
+            }
+        }
+        if ($null -ne $quietFrom -and $last-$quietFrom -ge 100) { Add-Interval 'lowLevel' $quietFrom $last }
+        $endMs = $timer.ElapsedMilliseconds
+        if ($endMs-$last -ge 250) { Add-Interval 'meterGap' $last $endMs }
+        $report['watch'] = [ordered]@{started=$started.ToString('o'); elapsedMs=$endMs; samples=$samples; aboveThresholdSamples=$audible; readError=$errorText; intervals=$intervals}
+    }
     if ($Mode -eq 'InspectAudio') {
         function Read-OptionalOBS([string]$Kind,$Data=@{}) {
             try { Invoke-OBS $Kind $Data } catch { @{error=$_.Exception.Message} }
