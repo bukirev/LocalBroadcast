@@ -137,9 +137,9 @@ func (m *MediaManager) applyViewer(needed bool, c Configuration) {
 }
 func (m *MediaManager) previewLoop(ctx context.Context, c Configuration) {
 	for ctx.Err() == nil {
-		args := []string{"-hide_banner", "-loglevel", "warning", "-fflags", "nobuffer", "-flags", "low_delay", "-framedrop",
-			"-analyzeduration", "0", "-probesize", "32768", "-window_title", "Local Broadcast - Presenter",
-			"-f", "mpegts", "-i", fmt.Sprintf("udp://0.0.0.0:%d?fifo_size=100000&overrun_nonfatal=1", presenterPort)}
+		args := []string{"-hide_banner", "-loglevel", "warning", "-sync", "ext", "-framedrop", "-noinfbuf", "-fflags", "nobuffer",
+			"-window_title", "Local Broadcast - Presenter", "-f", "mpegts", "-i",
+			fmt.Sprintf("udp://0.0.0.0:%d?fifo_size=1024&overrun_nonfatal=1", presenterPort)}
 		cmd := exec.CommandContext(ctx, binaryPath(c.FFplayPath), args...)
 		cmd.WaitDelay = 2 * time.Second
 		m.mu.Lock()
