@@ -62,9 +62,11 @@ func (s *pcmTimeline) push(start int64, pcm []byte) {
 
 // take is called under mu. The short hold lets WASAPI publish a packet before
 // its time is rendered, including when delivery is batched by the audio engine.
-func (s *pcmTimeline) take() []byte {
+func (s *pcmTimeline) take() []byte { return s.takeFrames(1) }
+
+func (s *pcmTimeline) takeFrames(minFrames int64) []byte {
 	due := int64(s.positionAt(s.now())) - int64(s.rate)*40/1000
-	if due <= s.next {
+	if due-s.next < minFrames {
 		return nil
 	}
 	if due-s.next > s.capacity/2 {
@@ -92,6 +94,10 @@ func (s *pcmTimeline) take() []byte {
 }
 
 func (s *pcmTimeline) Read(p []byte) (int, error) {
+	return s.readFrames(p, 1)
+}
+
+func (s *pcmTimeline) readFrames(p []byte, minFrames int64) (int, error) {
 	if len(p) == 0 {
 		return 0, nil
 	}
@@ -102,7 +108,7 @@ func (s *pcmTimeline) Read(p []byte) (int, error) {
 			return 0, io.EOF
 		}
 		if len(s.pending) == 0 {
-			s.pending = s.take()
+			s.pending = s.takeFrames(minFrames)
 		}
 		if len(s.pending) > 0 {
 			n := copy(p, s.pending)

@@ -49,6 +49,21 @@ func packetPCMFixture(t *testing.T, f AudioFormat, block int, gap bool) ([]byte,
 	return stream.Bytes(), raw.Bytes()
 }
 
+func TestPacketPCMWaitsForCompleteTenMilliseconds(t *testing.T) {
+	s, now := testTimeline()
+	s.push(0, bytes.Repeat([]byte{42}, 10))
+	for ms := 41; ms < 50; ms++ {
+		*now = s.epoch.Add(time.Duration(ms) * time.Millisecond)
+		if got := s.takeFrames(10); len(got) != 0 {
+			t.Fatalf("partial packet at %d ms: %d frames", ms, len(got))
+		}
+	}
+	*now = s.epoch.Add(50 * time.Millisecond)
+	if got := s.takeFrames(10); !bytes.Equal(got, bytes.Repeat([]byte{42}, 10)) {
+		t.Fatalf("expected full packet after hold: %v", got)
+	}
+}
+
 func TestPacketPCMRejectsInvalidFormat(t *testing.T) {
 	if _, err := newPCMPacketStream(nil, AudioFormat{}); err == nil {
 		t.Fatal("nil timeline accepted")

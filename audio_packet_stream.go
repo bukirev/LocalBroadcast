@@ -94,7 +94,8 @@ func (s *pcmPacketStream) Read(p []byte) (int, error) {
 		return 0, nil
 	}
 	if len(s.pending) == 0 {
-		n, err := s.source.Read(s.pcm)
+		// Fixed 10 ms packets keep the FFmpeg packet queue independent of OS timer granularity.
+		n, err := s.source.readFrames(s.pcm, int64(len(s.pcm)/s.source.block))
 		if n == 0 {
 			return 0, err
 		}

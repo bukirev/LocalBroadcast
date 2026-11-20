@@ -104,7 +104,7 @@ func TestPacketPCMLivePipelineConsumesForMinute(t *testing.T) {
 		if frames-lastFrames < int64(captureSampleRate(s)*8) || current-lastPackets < 100 {
 			t.Fatalf("PCM/AAC stopped after %ds: %+v packets=%d logs=%v", (i+1)*10, s, current, logs.List())
 		}
-		t.Logf("%ds PCM frames=%d AAC TS packets=%d", (i+1)*10, frames, current)
+		t.Logf("%ds PCM frames=%d AAC TS packets=%d skipped=%v missing=%v", (i+1)*10, frames, current, s["skippedFrames"], s["missingFrames"])
 		lastFrames = frames
 		lastPackets = current
 	}

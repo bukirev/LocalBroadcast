@@ -300,7 +300,8 @@ func ffmpegArgsPacketPCM(kind string, c Configuration, localPort int, pcm *Audio
 		return nil, fmt.Errorf("timestamped PCM input missing")
 	}
 	out := append([]string{}, args[:start]...)
-	out = append(out, "-thread_queue_size", "8", "-f", "matroska", "-i", "pipe:0")
+	// Up to 320 ms for transient encoder stalls; the queue does not wait to fill.
+	out = append(out, "-thread_queue_size", "32", "-f", "matroska", "-i", "pipe:0")
 	return append(out, args[end:]...), nil
 }
 func ffmpegArgsPCM(kind string, c Configuration, localPort int, pcm *AudioFormat) ([]string, error) {
