@@ -34,6 +34,12 @@ func gstBinary(name string) string {
 	if _, err := os.Stat(local); err == nil {
 		return local
 	}
+	if cache := gstCacheDir(); cache != "" {
+		path := filepath.Join(cache, "bin", name+".exe")
+		if _, err := os.Stat(path); err == nil {
+			return path
+		}
+	}
 	return name
 }
 
@@ -104,6 +110,16 @@ func selectedGSTDisplay(ds []CaptureDisplay, id string) (CaptureDisplay, error) 
 }
 
 func (gstBackend) Run(ctx context.Context, p *Pipeline, c Configuration, port int) {
+	if _, err := exec.LookPath(gstBinary("gst-launch-1.0")); err != nil {
+		p.logs.Add("Подготовка GStreamer: загрузка и проверка runtime (~85 МиБ)")
+		if err := prepareGStreamer(ctx, ""); err != nil {
+			if ctx.Err() == nil {
+				p.logs.Add("GStreamer: " + err.Error() + "; используем FFmpeg")
+				ffmpegBackend{}.Run(ctx, p, c, port)
+			}
+			return
+		}
+	}
 	enc := "mfh264enc"
 	for attempt := 0; ctx.Err() == nil; attempt++ {
 		args, err := gstArgs(p.kind, c, port, enc)

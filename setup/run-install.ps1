@@ -94,6 +94,11 @@ try {
     $backupSuffix = '.before-setup-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '-' + [guid]::NewGuid().ToString('N')
     if (Test-Path -LiteralPath $configPath) { Copy-Item -LiteralPath $configPath -Destination ($configPath + $backupSuffix) }
     $app = Join-Path $destination 'LocalBroadcast.exe'
+    $gstMSI = Join-Path $cache 'gstreamer-1.26.10.msi'
+    Write-Host 'Подготовка GStreamer 1.26.10...'
+    Get-VerifiedDownload $dependencies.gstreamer $gstMSI $offlineDirectory
+    $gst = Start-Process -FilePath $app -ArgumentList ('-prepare-gstreamer "' + $gstMSI + '"') -WindowStyle Hidden -Wait -PassThru
+    if ($gst.ExitCode -ne 0) { throw 'Не удалось подготовить GStreamer.' }
     $init = Start-Process -FilePath $app -ArgumentList ('-init-config -config "' + $configPath + '"') -WindowStyle Hidden -Wait -PassThru
     if ($init.ExitCode -ne 0) { throw 'Ошибка чтения существующей конфигурации. Резервная копия сохранена.' }
     $config = Get-Content -LiteralPath $configPath -Raw | ConvertFrom-Json

@@ -18,12 +18,12 @@ foreach ($name in @('LocalBroadcast.exe','README.md','RELEASE_NOTES.md','BUILD_I
 }
 foreach ($name in @('setup','docs')) { Copy-Item -LiteralPath (Join-Path $source $name) -Destination $package -Recurse -Force }
 $dependencies = Get-Content -LiteralPath (Join-Path $source 'setup\dependencies.json') -Raw | ConvertFrom-Json
-$files = [ordered]@{ffmpeg='ffmpeg-9.0.2.zip'; obs='OBS-Installer.exe'; vcredist='VC_redist.x64.exe'}
+$files = [ordered]@{gstreamer='gstreamer-1.26.10.msi';ffmpeg='ffmpeg-9.0.2.zip'; obs='OBS-Installer.exe'; vcredist='VC_redist.x64.exe'}
 $directory = Join-Path $package 'dependencies'
 New-Item -ItemType Directory -Force -Path $directory | Out-Null
 Write-Host 'Подготовка полного пакета. Компоненты скачиваются с сайтов их разработчиков и проверяются по SHA256.'
 foreach ($key in $files.Keys) { Get-VerifiedDownload $dependencies.$key (Join-Path $directory $files[$key]) $CacheDirectory }
-$sources = @('Dependencies are original upstream distributions, kept intact with their license files.', 'FFmpeg GPLv3: https://www.gyan.dev/ffmpeg/builds/ ; https://github.com/GyanD/codexffmpeg/releases/tag/9.0.2', 'FFmpeg source: https://github.com/FFmpeg/FFmpeg/commit/946fcce07b', 'OBS source and license: https://github.com/obsproject/obs-studio', 'Microsoft Runtime: https://visualstudio.microsoft.com/downloads/')
+$sources = @('Dependencies are original upstream distributions, kept intact with their license files.', 'FFmpeg GPLv3: https://www.gyan.dev/ffmpeg/builds/ ; https://github.com/GyanD/codexffmpeg/releases/tag/9.0.2', 'FFmpeg source: https://github.com/FFmpeg/FFmpeg/commit/946fcce07b', 'GStreamer 1.26.10: https://gstreamer.freedesktop.org/src/ ; runtime plugins retain their component licenses.', 'OBS source and license: https://github.com/obsproject/obs-studio', 'Microsoft Runtime: https://visualstudio.microsoft.com/downloads/')
 Set-Content -LiteralPath (Join-Path $package 'DEPENDENCY-SOURCES.txt') -Value $sources -Encoding utf8
 $archive = Join-Path $Destination ('LocalBroadcast-' + $version + '-Offline.zip')
 Write-Host 'Упаковка автономного архива...'

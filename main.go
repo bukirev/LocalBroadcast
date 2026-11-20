@@ -70,7 +70,14 @@ func main() {
 	validateUpdate := flag.String("validate-update-package", "", "проверить локальный пакет обновления")
 	flag.IntVar(&uiPort, "ui-port", 39888, "порт локальной панели (для изолированной диагностики)")
 	packageVersion := flag.String("package-version", "", "ожидаемая версия сборки пакета")
+	gstPackage := flag.String("prepare-gstreamer", "", "распаковать проверенный MSI GStreamer в профиль пользователя")
 	flag.Parse()
+	if *gstPackage != "" {
+		if err := prepareGStreamer(context.Background(), *gstPackage); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	if *packageVersion != "" && *packageVersion != appVersion {
 		log.Fatal("версия EXE отличается от версии пакета")
 	}

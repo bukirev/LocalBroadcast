@@ -1,4 +1,4 @@
-Local Broadcast 0.3.8-beta.2 — 2026-11-20
+Local Broadcast 0.3.9-beta — 2026-11-20
 Timestamped PCM transport to FFmpeg fixes observed live audio stall/silence.
 Six PCM round trips, timestamp gap, live music and controlled minute-long supervisor passed.
 WASAPI recovery, QSV fallback and 720p AV regressions checked.
