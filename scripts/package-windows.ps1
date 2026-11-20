@@ -1,4 +1,4 @@
-﻿param([string]$Version = '0.3.9-beta.1')
+﻿param([string]$Version = '0.3.9-beta.2')
 $ErrorActionPreference = 'Stop'
 $project = Split-Path $PSScriptRoot -Parent
 $stage = Join-Path $project ('dist\package-' + $Version + '-' + [guid]::NewGuid().ToString('N'))
