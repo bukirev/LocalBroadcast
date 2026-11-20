@@ -235,10 +235,10 @@ func (m *MediaManager) syncReceiversLocked(ports []int, c Configuration) {
 func pipelineSignature(kind string, c Configuration) string {
 	var selected any
 	if kind == "screen" {
-		selected = []any{c.FFmpegPath, c.ScreenFPS, c.ScreenFPSMode, c.ScreenWidth, c.ScreenHeight, c.ScreenBitrateK, c.ScreenAudioMode, c.ScreenAudioDevice, c.ScreenAudioEndpoint, c.ScreenMonitor, c.Encoder}
+		selected = []any{c.MediaBackend, c.FFmpegPath, c.ScreenFPS, c.ScreenFPSMode, c.ScreenWidth, c.ScreenHeight, c.ScreenBitrateK, c.ScreenAudioMode, c.ScreenAudioDevice, c.ScreenAudioEndpoint, c.ScreenMonitor, c.Encoder}
 	}
 	if kind == "camera" {
-		selected = []any{c.FFmpegPath, c.CameraFPS, c.CameraBitrateK, c.CameraWidth, c.CameraHeight, c.CameraDevice, c.CameraAudioDevice, c.Encoder}
+		selected = []any{c.MediaBackend, c.FFmpegPath, c.CameraFPS, c.CameraBitrateK, c.CameraWidth, c.CameraHeight, c.CameraDevice, c.CameraAudioDevice, c.Encoder}
 	}
 	b, _ := json.Marshal(selected)
 	return string(b)
@@ -389,6 +389,9 @@ type Pipeline struct {
 	packetsForwarded         atomic.Uint64
 	sendErrors               atomic.Uint64
 	audio                    *pcmTimeline
+	backend                  string
+	gstAudioAt               time.Time
+	gstAudioDB               float64
 	requestedEncoder         string
 	encoder                  string
 	width, height, targetFPS int
@@ -432,7 +435,11 @@ func startPipeline(kind string, port int, c Configuration, logs *LogBuffer) (*Pi
 		p.fpsMode = "fixed"
 	}
 	go p.forwardLoop(ctx)
-	go p.captureLoop(ctx, binaryPath(c.FFmpegPath), c, port)
+	var backend MediaBackend = ffmpegBackend{}
+	if c.MediaBackend == "gstreamer" {
+		backend = gstBackend{}
+	}
+	go func() { defer close(p.captureDone); backend.Run(ctx, p, c, port) }()
 	return p, nil
 }
 func (p *Pipeline) SetTargets(endpoints []Endpoint) {
@@ -497,9 +504,7 @@ func (p *Pipeline) forwardLoop(ctx context.Context) {
 	}
 }
 func (p *Pipeline) captureLoop(ctx context.Context, binary string, c Configuration, port int) {
-	if p.captureDone != nil {
-		defer close(p.captureDone)
-	}
+
 	retry := time.Second
 	p.mu.Lock()
 	p.requestedEncoder = c.Encoder
@@ -662,7 +667,10 @@ func (w *lineWriter) Write(b []byte) (int, error) {
 func (p *Pipeline) Snapshot() map[string]any {
 	p.mu.RLock()
 	defer p.mu.RUnlock()
-	out := map[string]any{"targets": len(p.targets), "running": p.running, "packetsForwarded": p.packetsForwarded.Load(), "sendErrors": p.sendErrors.Load(), "encoder": p.encoder, "requestedEncoder": p.requestedEncoder, "width": p.width, "height": p.height, "targetFPS": p.targetFPS, "fpsMode": p.fpsMode}
+	out := map[string]any{"mediaBackend": p.backend, "targets": len(p.targets), "running": p.running, "packetsForwarded": p.packetsForwarded.Load(), "sendErrors": p.sendErrors.Load(), "encoder": p.encoder, "requestedEncoder": p.requestedEncoder, "width": p.width, "height": p.height, "targetFPS": p.targetFPS, "fpsMode": p.fpsMode}
+	if p.backend == "gstreamer" && !p.gstAudioAt.IsZero() {
+		out["audio"] = map[string]any{"peakDB": p.gstAudioDB, "lastBufferAgeMs": time.Since(p.gstAudioAt).Milliseconds()}
+	}
 	if p.audio != nil {
 		out["audio"] = p.audio.Snapshot()
 	}

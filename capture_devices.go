@@ -6,6 +6,7 @@ import (
 )
 
 type CaptureDisplay struct {
+	handle  uintptr
 	ID      string `json:"id"`
 	Name    string `json:"name"`
 	Left    int    `json:"left"`

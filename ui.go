@@ -172,7 +172,20 @@ func (a *Application) serveUI(ctx context.Context) error {
 		if audioErr != nil {
 			warnings = append(warnings, audioErr.Error())
 		}
-		jsonWrite(w, map[string]any{"output": out, "displays": displays, "audioOutputs": audioOutputs, "warnings": warnings})
+		var gstDevices string
+		if c.MediaBackend == "gstreamer" {
+			scanCtx, stop := context.WithTimeout(r.Context(), 8*time.Second)
+			defer stop()
+			scan := exec.CommandContext(scanCtx, gstBinary("gst-device-monitor-1.0"), "Video/Source", "Audio/Source")
+			prepareHeadlessCommand(scan)
+			data, err := scan.Output()
+			if err != nil {
+				warnings = append(warnings, "GStreamer device monitor: "+err.Error())
+			} else {
+				gstDevices = string(data)
+			}
+		}
+		jsonWrite(w, map[string]any{"gstDevices": gstDevices, "output": out, "displays": displays, "audioOutputs": audioOutputs, "warnings": warnings})
 	})
 	mux.HandleFunc("/api/action", func(w http.ResponseWriter, r *http.Request) {
 		if !requireUIWrite(w, r) {

@@ -35,8 +35,8 @@ function renderOverview(state){
  if(master){list.append(activity('▣','Координатор','Принимает регистрации и распределяет адреса','Работает'),activity('◫','OBS Studio',state.obs?.ready?'Источники синхронизированы':(state.obs?.error||'Проверка подключения к OBS'),state.obs?.ready?'Готов':'Не готов'))}
  else {
   list.append(activity('◉','Центральное управление',agent.connected?'Профиль и маршруты получены':'Ожидание соединения',agent.connected?'Связь есть':'Ожидание'));
-  if(media.screen&&typeof media.screen==='object')list.append(activity('▣','Экран презентера','Получателей: '+media.screen.targets,media.screen.running?'Кодирует':'Запуск'));
-  if(media.camera&&typeof media.camera==='object')list.append(activity('◉','Камера','Получателей: '+media.camera.targets,media.camera.running?'Кодирует':'Запуск'));
+  if(media.screen&&typeof media.screen==='object')list.append(activity('▣','Экран презентера',[media.screen.mediaBackend, 'Получателей: '+media.screen.targets].filter(Boolean).join(' · '),media.screen.running?'Кодирует':'Запуск'));
+  if(media.camera&&typeof media.camera==='object')list.append(activity('◉','Камера',[media.camera.mediaBackend, 'Получателей: '+media.camera.targets].filter(Boolean).join(' · '),media.camera.running?'Кодирует':'Запуск'));
   if(media.preview)list.append(activity('▤','Предпросмотр','Получение экрана презентера через FFplay','Активен'));
   if(streamCount===0&&!media.preview)list.append(activity('◌','Медиа','Исходящие/входящие потоки пока не активны','Ожидание'));
  }
@@ -79,7 +79,7 @@ function renderSync(adjustments){
 function renderOBS(peers){const root=$('obs-camera-ports');clear(root);
  for(const p of peers||[]){if(!p.sendCamera)continue;const n=el('div','kv');n.append(el('span','',p.name),el('code','',`udp://0.0.0.0:${p.cameraPort}`));root.append(n)}
 }
-const fields = ['name','mode','secret','masterIp','sendScreen','sendCamera','watchPresenter','autoStart','launchAtLogin','screenFps','screenBitrateK','cameraFps','cameraBitrateK','cameraWidth','cameraHeight','cameraDevice','screenMonitor','screenAudioEndpoint','screenAudioDevice','cameraAudioDevice','screenAudioMode','transport','srtLatencyMs','srtAdaptive','syncEnabled','encoder','ffmpegPath','ffplayPath','obsUrl','obsPassword','obsScene','obsExePath','autoLaunchObs','obsAutoSync'];
+const fields = ['name','mode','secret','masterIp','sendScreen','sendCamera','watchPresenter','autoStart','launchAtLogin','screenFps','screenBitrateK','cameraFps','cameraBitrateK','cameraWidth','cameraHeight','cameraDevice','screenMonitor','screenAudioEndpoint','screenAudioDevice','cameraAudioDevice','screenAudioMode','mediaBackend','transport','srtLatencyMs','srtAdaptive','syncEnabled','encoder','ffmpegPath','ffplayPath','obsUrl','obsPassword','obsScene','obsExePath','autoLaunchObs','obsAutoSync'];
 const checks = new Set(['sendScreen','sendCamera','watchPresenter','autoStart','launchAtLogin','autoLaunchObs','obsAutoSync','srtAdaptive','syncEnabled']);
 const numeric = new Set(['screenFps','screenBitrateK','cameraFps','cameraBitrateK','cameraWidth','cameraHeight','srtLatencyMs']);
 function populateForm(cfg){for(const k of fields){const input=$('f-'+k);if(!input)continue;if(checks.has(k))input.checked=!!cfg[k];else {if(['screenMonitor','screenAudioEndpoint'].includes(k))ensureDeviceOption(input,cfg[k]||'');if(k==='screenFps')ensureFPSOption(cfg.screenFps);input.value=cfg[k]??'';}}
@@ -243,7 +243,7 @@ async function loadCaptureDevices(){
   fillDeviceOptions('f-screenAudioEndpoint',outputs,'Устройство Windows по умолчанию'+(def?' — '+def.name:''));
   $('capture-dshow-audio').replaceChildren();
   for(const match of (d.output||'').matchAll(/"([^"\n]+)" \(audio\)/g)){const o=document.createElement('option');o.value=match[1];$('capture-dshow-audio').append(o)}
-  $('device-output').textContent=d.output||'Устройства DirectShow не обнаружены';
+  $('device-output').textContent=[d.gstDevices,d.output].filter(Boolean).join('\n')||'Устройства захвата не обнаружены';
   $('capture-device-status').textContent=`Экранов: ${displays.length}; аудиовыходов: ${outputs.length}. `+(d.warnings||[]).join(' ');
  }catch(e){$('capture-device-status').textContent='Не удалось обновить устройства: '+e.message;}
  finally{buttons.forEach(b=>b.disabled=false)}

@@ -30,7 +30,7 @@ var captureMonitorCallback = syscall.NewCallback(func(monitor, dc, rect, data ui
 		if info.Flags&1 != 0 {
 			name += " · основной"
 		}
-		*out = append(*out, CaptureDisplay{ID: id, Name: name, Left: int(info.Bounds.Left), Top: int(info.Bounds.Top), Width: w, Height: h, Primary: info.Flags&1 != 0})
+		*out = append(*out, CaptureDisplay{handle: monitor, ID: id, Name: name, Left: int(info.Bounds.Left), Top: int(info.Bounds.Top), Width: w, Height: h, Primary: info.Flags&1 != 0})
 	}
 	return 1
 })

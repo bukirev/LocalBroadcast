@@ -36,6 +36,7 @@ type Configuration struct {
 	SendScreen          bool                       `json:"sendScreen"`
 	SendCamera          bool                       `json:"sendCamera"`
 	WatchPresenter      bool                       `json:"watchPresenter"`
+	MediaBackend        string                     `json:"mediaBackend"`
 	ScreenMonitor       string                     `json:"screenMonitor"`
 	ScreenAudioEndpoint string                     `json:"screenAudioEndpoint"`
 	ScreenWidth         int                        `json:"screenWidth"`
@@ -153,6 +154,9 @@ func validateConfig(c *Configuration) error {
 	}
 	if c.CameraWidth < 320 || c.CameraWidth > 3840 || c.CameraHeight < 240 || c.CameraHeight > 2160 {
 		return errors.New("некорректное разрешение камеры")
+	}
+	if c.MediaBackend != "" && c.MediaBackend != "ffmpeg" && c.MediaBackend != "gstreamer" {
+		return errors.New("неизвестный медиадвижок")
 	}
 	switch c.Encoder {
 	case "libx264", "h264_nvenc", "h264_qsv", "h264_amf":
