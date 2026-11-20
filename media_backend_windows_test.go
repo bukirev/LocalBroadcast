@@ -20,7 +20,7 @@ func TestGSTScreenOnWindows(t *testing.T) {
 	c := defaultConfig()
 	c.ScreenWidth, c.ScreenHeight, c.ScreenFPS = 1280, 720, 30
 	c.ScreenAudioMode = "wasapi"
-	c.MediaBackend = "gstreamer"
+	c.MediaBackend = "" // Exercise the automatic selection used by upgraded clients.
 	displays, err := captureDisplays()
 	if err != nil || len(displays) == 0 {
 		t.Fatal("monitor unavailable", err)

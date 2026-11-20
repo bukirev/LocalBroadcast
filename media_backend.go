@@ -17,6 +17,22 @@ import (
 type MediaBackend interface {
 	Run(context.Context, *Pipeline, Configuration, int)
 }
+
+// An empty preference is shared by legacy configurations and the automatic UI option.
+func preferGStreamer(kind string, c Configuration, displays func() ([]CaptureDisplay, error)) bool {
+	if c.MediaBackend != "" {
+		return c.MediaBackend == "gstreamer"
+	}
+	if kind != "screen" || c.ScreenFPSMode == "adaptive" || (c.ScreenAudioMode != "wasapi" && c.ScreenAudioMode != "off") {
+		return false
+	}
+	if c.ScreenMonitor != "" {
+		return true
+	}
+	list, err := displays()
+	return err == nil && len(list) == 1
+}
+
 type ffmpegBackend struct{}
 
 func (ffmpegBackend) Run(ctx context.Context, p *Pipeline, c Configuration, port int) {

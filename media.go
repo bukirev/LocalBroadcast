@@ -436,7 +436,7 @@ func startPipeline(kind string, port int, c Configuration, logs *LogBuffer) (*Pi
 	}
 	go p.forwardLoop(ctx)
 	var backend MediaBackend = ffmpegBackend{}
-	if c.MediaBackend == "gstreamer" {
+	if preferGStreamer(kind, c, captureDisplays) {
 		backend = gstBackend{}
 	}
 	go func() { defer close(p.captureDone); backend.Run(ctx, p, c, port) }()

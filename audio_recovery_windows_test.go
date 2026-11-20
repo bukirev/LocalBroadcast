@@ -57,6 +57,7 @@ func TestWASAPICaptureEOFRecoversLiveAudio(t *testing.T) {
 	c.ScreenFPS = 15
 	c.ScreenBitrateK = 2000
 	logs := &LogBuffer{}
+	c.MediaBackend = "ffmpeg" // Exercise the native FFmpeg capture path.
 	p, err := startPipeline("screen", port, c, logs)
 	if err != nil {
 		t.Fatal(err)

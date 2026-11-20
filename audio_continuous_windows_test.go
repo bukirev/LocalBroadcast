@@ -82,6 +82,7 @@ func TestPacketPCMLivePipelineConsumesForMinute(t *testing.T) {
 		}
 	}()
 	logs := &LogBuffer{}
+	c.MediaBackend = "ffmpeg" // Exercise the native FFmpeg capture path.
 	p, err := startPipeline("screen", port, c, logs)
 	if err != nil {
 		t.Fatal(err)
